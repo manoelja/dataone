@@ -66,6 +66,18 @@ def render_diagnostico_tab(df: pd.DataFrame):
         m4.metric("Linhas Duplicadas", 0)
 
     st.divider()
+
+    # --- Nova Seção: Detecção de Outliers ---
+    import processing
+    outliers = processing.detectar_outliers_iqr(df)
+    if outliers:
+        with st.expander("⚠️ Alerta de Outliers (Anomalias Numéricas)", expanded=True):
+            st.warning("Foram detectados valores atípicos que podem distorcer a análise.")
+            outlier_df = pd.DataFrame(list(outliers.items()), columns=['Coluna', 'Qtd de Outliers'])
+            st.table(outlier_df)
+    else:
+        st.success("✅ Nenhuma anomalia numérica significativa detectada.")
+
     st.markdown("### Perfil de Metadados por Coluna")
 
     df_tipos = pd.DataFrame({
@@ -101,8 +113,11 @@ def render_limpeza_tab(df: pd.DataFrame, id_arquivo: str):
         remover_dup_geral = st.checkbox("Remover linhas 100% idênticas na tabela", value=False, key=f"dup_geral_{id_arquivo}")
         ccolunas_chave_dup = st.multiselect("Ou escolher colunas-chave para checar duplicidade (Ex: CPF, ID):", options=df.columns, key=f"dup_chave_{id_arquivo}")
 
-        if remover_dup_geral or ccolunas_chave_dup:
-            st.session_state['action_limpeza'] = ('remover_dup', remover_dup_geral, ccolunas_chave_dup)
+        if st.button("Remover Duplicados", key=f"btn_dup_{id_arquivo}"):
+            if remover_dup_geral or ccolunas_chave_dup:
+                st.session_state['action_limpeza'] = ('remover_dup', remover_dup_geral, ccolunas_chave_dup)
+            else:
+                st.error("⚠️ Por favor, selecione a opção 'Geral' ou escolha colunas-chave.")
 
     with col_limp_2:
         st.markdown("#### Tratar Valores Faltantes (Nulos)")
@@ -129,6 +144,26 @@ def render_limpeza_tab(df: pd.DataFrame, id_arquivo: str):
 
             if st.button("Aplicar Tratamento de Nulos", key=f"btn_nulos_{id_arquivo}"):
                 st.session_state['action_limpeza'] = ('tratar_nulos', colunas_nulas, estrategia_nulos)
+
+    st.divider()
+    st.markdown("#### 🔗 Mesclar Arquivos (Join)")
+    with st.expander("Unir esta base com outro arquivo", expanded=False):
+        secondary_file = st.file_uploader("Faça upload do arquivo secundário:", type=['xlsx', 'csv'], key=f"merge_file_{id_arquivo}")
+
+        if secondary_file:
+            # Carregamento temporário para pegar as colunas
+            import processing
+            df_sec = processing.carregar_dados(secondary_file)
+            st.session_state[f'df_sec_{id_arquivo}'] = df_sec
+
+            c_k1, c_k2 = st.columns(2)
+            with c_k1:
+                key1 = st.selectbox("Coluna de ligação (Base Principal):", options=df.columns, key=f"key1_{id_arquivo}")
+            with c_k2:
+                key2 = st.selectbox("Coluna de ligação (Base Secundária):", options=df_sec.columns, key=f"key2_{id_arquivo}")
+
+            if st.button("Mesclar Bases de Dados", type="primary", key=f"btn_merge_{id_arquivo}"):
+                st.session_state['action_merge'] = (secondary_file, key1, key2)
 
     st.divider()
     st.markdown("#### ❌ Excluir Coluna da Tabela")
@@ -181,8 +216,7 @@ def render_limpeza_tab(df: pd.DataFrame, id_arquivo: str):
 
     st.divider()
     st.markdown("#### 🧼 Faxina Invisível Automática")
-    limpar_espacos = st.checkbox("Aparar espaços em branco fantasmas (Strip) de todas as células de texto", value=True, key=f"strip_{id_arquivo}")
-    if limpar_espacos:
+    if st.button("Aparar espaços em branco fantasmas (Strip) de todas as células de texto", key=f"btn_strip_{id_arquivo}"):
         st.session_state['action_limpeza'] = ('strip_all', True, None)
 
     st.divider()
@@ -265,29 +299,65 @@ def render_formatacao_tab(df: pd.DataFrame):
     st.dataframe(df, hide_index=True, use_container_width=True)
 
 def render_rh_tab(df: pd.DataFrame):
-    """Aba 5: Regras de RH."""
-    st.subheader("🛠️ Regra de Calendário de RH")
-    st.caption("Calcule dinamicamente a data exata de desligamento com base na data de admissão e tempo de casa.")
+    """Aba 5: Toolkit de RH."""
+    st.subheader("🛠️ Toolkit de Gestão de Pessoas")
+    st.caption("Selecione uma ferramenta para processar regras de negócio de RH.")
 
-    c1, c2, c3, c4 = st.columns(4)
-    with c1:
-        col_admissao = st.selectbox('Data de Admissão:', options=['Não aplicar...'] + list(df.columns), key='sb_admissao')
-    with c2:
-        col_tempo = st.selectbox('Tempo de Casa (Anos,Meses):', options=['Não aplicar...'] + list(df.columns), key='sb_tempo')
-    with c3:
-        col_desligado = st.selectbox('Coluna "Desligado?":', options=['Não aplicar...'] + list(df.columns), key='sb_desligado')
-    with c4:
-        col_demissao = st.selectbox('Coluna Destino (Data de Demissão):', options=['Criar nova coluna'] + list(df.columns), key='sb_demissao')
-
-    if col_demissao == 'Criar nova coluna':
-        col_demissao = 'data_demissao_calculada'
-
-    if col_admissao != 'Não aplicar...' and col_tempo != 'Não aplicar...' and col_desligado != 'Não aplicar...':
-        if st.button("Calcular Datas de Demissão"):
-            st.session_state['action_rh'] = (col_admissao, col_tempo, col_desligado, col_demissao)
+    # Menu de Ferramentas
+    tool = st.selectbox("Escolha a Ferramenta de RH:",
+                        options=["Tempo de Casa Atual", "Banding Salarial", "Compliance RH", "Cálculo de Demissão (Legado)"],
+                        key="rh_tool_selector")
 
     st.divider()
-    st.markdown("##### 📊 Visualização Parcial (Com Cálculos de RH Aplicados)")
+
+    if tool == "Tempo de Casa Atual":
+        st.markdown("#### 📅 Calcular Tempo de Casa")
+        st.info("Cria a coluna 'tempo_casa_atual' comparando a admissão com a data de hoje.")
+        col_adm = st.selectbox('Coluna de Admissão:', options=list(df.columns), key='rh_adm_casa')
+        if st.button("Calcular Tempo de Casa"):
+            st.session_state['action_rh'] = ('tempo_casa', col_adm)
+
+    elif tool == "Banding Salarial":
+        st.markdown("#### 💰 Criação de Faixas Salariais")
+        st.info("Agrupe salários em categorias (Ex: 0-3000:Junior; 3000-6000:Pleno)")
+        col_sal = st.selectbox('Coluna de Salário:', options=list(df.columns), key='rh_sal_col')
+        faixas = st.text_input('Definição das Faixas (Formato: min-max:Nome; ...):',
+                               value="0-3000:Junior; 3000-6000:Pleno; 6000-10000:Senior",
+                               key='rh_faixas_input')
+        if st.button("Aplicar Banding Salarial"):
+            st.session_state['action_rh'] = ('banding', col_sal, faixas)
+
+    elif tool == "Compliance RH":
+        st.markdown("#### 🛡️ Validação de Compliance")
+        st.info("Identifica datas futuras ou documentos com formato incorreto.")
+        c1, c2 = st.columns(2)
+        with c1:
+            col_data = st.selectbox('Coluna de Data:', options=list(df.columns), key='rh_comp_data')
+        with c2:
+            col_doc = st.selectbox('Coluna de Documento:', options=list(df.columns), key='rh_comp_doc')
+        if st.button("Validar Compliance"):
+            st.session_state['action_rh'] = ('compliance', col_data, col_doc)
+
+    elif tool == "Cálculo de Demissão (Legado)":
+        st.markdown("#### 🗓️ Cálculo de Data de Demissão")
+        c1, c2, c3, c4 = st.columns(4)
+        with c1:
+            col_admissao = st.selectbox('Data de Admissão:', options=['Não aplicar...'] + list(df.columns), key='sb_admissao')
+        with c2:
+            col_tempo = st.selectbox('Tempo de Casa (Anos,Meses):', options=['Não aplicar...'] + list(df.columns), key='sb_tempo')
+        with c3:
+            col_desligado = st.selectbox('Coluna "Desligado?":', options=['Não aplicar...'] + list(df.columns), key='sb_desligado')
+        with c4:
+            col_demissao = st.selectbox('Coluna Destino (Data de Demissão):', options=['Criar nova coluna'] + list(df.columns), key='sb_demissao')
+
+        if col_demissao == 'Criar nova coluna': col_demissao = 'data_demissao_calculada'
+
+        if col_admissao != 'Não aplicar...' and col_tempo != 'Não aplicar...' and col_desligado != 'Não aplicar...':
+            if st.button("Calcular Datas de Demissão"):
+                st.session_state['action_rh'] = ('demissao', col_admissao, col_tempo, col_desligado, col_demissao)
+
+    st.divider()
+    st.markdown("##### 📊 Visualização Parcial (RH)")
     st.dataframe(df, hide_index=True, use_container_width=True)
 
 def render_export_tab(df: pd.DataFrame, column_config: Dict[str, Any]):

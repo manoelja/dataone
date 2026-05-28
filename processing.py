@@ -5,6 +5,28 @@ import random
 import csv
 from typing import List, Optional, Tuple, Dict, Any, Union
 
+def detectar_outliers_iqr(df: pd.DataFrame) -> Dict[str, int]:
+    """Detecta outliers em colunas numéricas utilizando o método do Intervalo Interquartil (IQR)."""
+    outliers_count = {}
+
+    # Seleciona apenas colunas numéricas
+    numeric_cols = df.select_dtypes(include=[np.number]).columns
+
+    for col in numeric_cols:
+        q1 = df[col].quantile(0.25)
+        q3 = df[col].quantile(0.75)
+        iqr = q3 - q1
+
+        lower_bound = q1 - 1.5 * iqr
+        upper_bound = q3 + 1.5 * iqr
+
+        # Conta quantos valores estão fora dos limites
+        count = ((df[col] < lower_bound) | (df[col] > upper_bound)).sum()
+        if count > 0:
+            outliers_count[col] = int(count)
+
+    return outliers_count
+
 def gerar_cpf_valido() -> str:
     """Gera um CPF válido aleatoriamente."""
     nine_digits = [random.randint(0, 9) for _ in range(9)]
@@ -21,6 +43,10 @@ def gerar_cnpj_valido() -> str:
         val = sum([pesos[i] * v for i, v in enumerate(cnpj)]) % 11
         cnpj.append(0 if val < 2 else 11 - val)
     return f"{''.join(map(str, cnpj[0:2]))}.{''.join(map(str, cnpj[2:5]))}.{''.join(map(str, cnpj[5:8]))}/{''.join(map(str, cnpj[8:12]))}-{''.join(map(str, cnpj[12:14]))}"
+
+def merge_dataframes(df1: pd.DataFrame, df2: pd.DataFrame, key1: str, key2: str) -> pd.DataFrame:
+    """Mescla dois DataFrames com base em chaves selecionadas (Left Join)."""
+    return pd.merge(df1, df2, left_on=key1, right_on=key2, how='left')
 
 def detectar_delimitador(file) -> str:
     """Detecta automaticamente o delimitador de um arquivo CSV."""
@@ -133,6 +159,79 @@ def preencher_documentos_fakes(df: pd.DataFrame, col: str, tipo: str) -> pd.Data
         df[col] = [gerar_cnpj_valido() for _ in range(len(df))]
     return df
 
+def calcular_tempo_casa(df: pd.DataFrame, col_admissao: str) -> pd.DataFrame:
+    """Calcula o tempo de casa em anos e meses desde a data de admissão até hoje."""
+    df_res = df.copy()
+    df_res[col_admissao] = pd.to_datetime(df_res[col_admissao], dayfirst=True, errors='coerce')
+    hoje = pd.Timestamp.now().normalize()
+
+    def diff_tempo(dt_adm):
+        if pd.isna(dt_adm): return "N/A"
+        diff = hoje - dt_adm
+        anos = diff.days // 365
+        meses = (diff.days % 365) // 30
+        return f"{anos} anos e {meses} meses"
+
+    df_res['tempo_casa_atual'] = df_res[col_admissao].apply(diff_tempo)
+    return df_res
+
+def aplicar_banding_salarial(df: pd.DataFrame, col_salario: str, faixas_str: str) -> pd.DataFrame:
+    """Aplica faixas salariais com base em uma string de definição: '0-3000:Junior; 3000-6000:Pleno'."""
+    df_res = df.copy()
+    try:
+        # Normalização do salário para numérico
+        if df_res[col_salario].dtype == 'object':
+            df_res[col_salario] = (
+                df_res[col_salario].astype(str)
+                .str.replace(r'[R\$\s\.€]', '', regex=True)
+                .str.replace(',', '.', regex=False)
+            )
+        salarios = pd.to_numeric(df_res[col_salario], errors='coerce')
+
+        # Parse das faixas
+        faixas = []
+        for item in faixas_str.split(';'):
+            if not item.strip(): continue
+            range_val, label = item.split(':')
+            low, high = map(float, range_val.split('-'))
+            faixas.append((low, high, label.strip()))
+
+        def categorizar(val):
+            if pd.isna(val): return "Não Informado"
+            for low, high, label in faixas:
+                if low <= val < high:
+                    return label
+            return "Fora de Faixa"
+
+        df_res['faixa_salarial'] = salarios.apply(categorizar)
+    except Exception as e:
+        raise RuntimeError(f"Erro ao aplicar banding salarial: {e}")
+
+    return df_res
+
+def validar_compliance_rh(df: pd.DataFrame, col_data: str, col_doc: str) -> pd.DataFrame:
+    """Valida se há datas futuras ou documentos com tamanho incorreto."""
+    df_res = df.copy()
+    hoje = pd.Timestamp.now().normalize()
+
+    def check_compliance(row):
+        erros = []
+        # Validação Data
+        dt = pd.to_datetime(row[col_data], dayfirst=True, errors='coerce')
+        if pd.notnull(dt) and dt > hoje:
+            erros.append("Data Futura")
+
+        # Validação Documento (Simplificada: CPF 11, CNPJ 14)
+        doc = str(row[col_doc])
+        digits = "".join(filter(str.isdigit, doc))
+        if len(digits) not in [11, 14]:
+            erros.append("Doc Inválido")
+
+        return ", ".join(erros) if erros else "OK"
+
+    df_res['compliance_status'] = df_res.apply(check_compliance, axis=1)
+    return df_res
+
 def calcular_demissao_rh(df: pd.DataFrame, col_admissao: str, col_tempo: str, col_desligado: str, col_demissao: str) -> pd.DataFrame:
     """Calcula a data de demissão com base na admissão e tempo de casa."""
     df_res = df.copy()
@@ -200,13 +299,14 @@ def processar_formatacoes_finais(df: pd.DataFrame, colunas_moeda: List[str], dic
 
         # Tentativa de conversão numérica geral para colunas restantes
         else:
-            try:
-                # Evita converter a coluna de tempo de casa se ela estiver sendo usada no cálculo de RH
-                # (Preservando o comportamento original onde col_tempo era ignorada no loop final)
-                if coluna != col_demissao: # Simplified check
-                    df_final[coluna] = pd.to_numeric(df_final[coluna])
-            except:
-                pass
+            # Segurança: Evita converter colunas que parecem ser IDs, CEPs ou Documentos para evitar perda de zeros à esquerda
+            protected_keywords = {'cpf', 'cnpj', 'id', 'documento', 'cep', 'codigo', 'matricula'}
+            if not any(key in coluna.lower() for key in protected_keywords):
+                try:
+                    if coluna != col_demissao:
+                        df_final[coluna] = pd.to_numeric(df_final[coluna])
+                except:
+                    pass
 
     return df_final, columns_fmt
 

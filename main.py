@@ -107,6 +107,20 @@ def main():
             st.success("Ação aplicada com sucesso!")
             st.rerun()
 
+        # Processamento de Ações de Merge
+        if 'action_merge' in st.session_state:
+            file_sec, key1, key2 = st.session_state['action_merge']
+            try:
+                df_sec = processing.carregar_dados(file_sec)
+                st.session_state['df_tratado'] = processing.merge_dataframes(df_tratado, df_sec, key1, key2)
+                registrar_log(f"🔗 Bases mescladas via {key1} $\rightarrow$ {key2}.")
+                st.success("Bases mescladas com sucesso!")
+            except Exception as e:
+                st.error(f"Erro ao mesclar bases: {e}")
+
+            del st.session_state['action_merge']
+            st.rerun()
+
     # --- ABA 3: TEXTO ---
     with aba_texto:
         ui_components.render_texto_tab(df_tratado)
@@ -143,13 +157,27 @@ def main():
         ui_components.render_rh_tab(df_tratado)
 
         if 'action_rh' in st.session_state:
-            params = st.session_state['action_rh'] # (adm, tempo, deslig, demissao)
+            action_data = st.session_state['action_rh']
+            tool_name = action_data[0]
+            params = action_data[1:]
+
             try:
-                st.session_state['df_tratado'] = processing.calcular_demissao_rh(df_tratado, *params)
-                registrar_log(f"🛠️ Cálculo de demissão aplicado na coluna {params[3]}.")
-                st.success("Cálculo de RH aplicado com sucesso!")
+                if tool_name == 'tempo_casa':
+                    st.session_state['df_tratado'] = processing.calcular_tempo_casa(df_tratado, params[0])
+                    registrar_log(f"🛠️ Tempo de casa calculado para a coluna {params[0]}.")
+                elif tool_name == 'banding':
+                    st.session_state['df_tratado'] = processing.aplicar_banding_salarial(df_tratado, params[0], params[1])
+                    registrar_log(f"🛠️ Banding salarial aplicado na coluna {params[0]}.")
+                elif tool_name == 'compliance':
+                    st.session_state['df_tratado'] = processing.validar_compliance_rh(df_tratado, params[0], params[1])
+                    registrar_log(f"🛠️ Auditoria de compliance executada para {params[0]} e {params[1]}.")
+                elif tool_name == 'demissao':
+                    st.session_state['df_tratado'] = processing.calcular_demissao_rh(df_tratado, *params)
+                    registrar_log(f"🛠️ Cálculo de demissão aplicado na coluna {params[3]}.")
+
+                st.success("Operação de RH concluída com sucesso!")
             except Exception as e:
-                st.error(str(e))
+                st.error(f"Erro no processamento de RH: {e}")
 
             del st.session_state['action_rh']
             st.rerun()
