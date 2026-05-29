@@ -186,12 +186,17 @@ def render_limpeza_tab(df: pd.DataFrame, id_arquivo: str):
     with c_pos1:
         col_esquerda = st.selectbox("Coluna da Esquerda (X):", options=list(df.columns), key=f"col_esquerda_pos_{id_arquivo}")
     with c_pos2:
-        idx_esq_atual = list(df.columns).index(col_esquerda)
-        opcoes_direita = list(df.columns)[idx_esq_atual + 1:]
-        if opcoes_direita:
-            col_direita = st.selectbox("Coluna da Direita (Y):", options=opcoes_direita, key=f"col_direita_pos_{id_arquivo}")
+        # PROTEÇÃO CONTRA VALOR VAZIO / NONE
+        if col_esquerda and col_esquerda in df.columns:
+            idx_esq_atual = list(df.columns).index(col_esquerda)
+            opcoes_direita = list(df.columns)[idx_esq_atual + 1:]
+            if opcoes_direita:
+                col_direita = st.selectbox("Coluna da Direita (Y):", options=opcoes_direita, key=f"col_direita_pos_{id_arquivo}")
+            else:
+                st.caption("⚠️ Não há colunas depois desta.")
+                col_direita = None
         else:
-            st.caption("⚠️ Não há colunas depois desta.")
+            st.caption("Aguardando seleção da coluna...")
             col_direita = None
 
     tipo_valor_padrao = st.selectbox(
@@ -231,10 +236,20 @@ def render_texto_tab(df: pd.DataFrame):
     with c_txt1:
         st.markdown("#### Caixa do Texto")
         cols_caixa = st.multiselect("Selecionar colunas para ajustar LETRAS:", options=df.columns, key='txt_caixa')
+        
         if cols_caixa:
-            modo_caixa = st.selectbox("Formato desejado:", ["TUDO EM MAIÚSCULO", "tudo em minúsculo", "Primeira Letra Maiúscula (Capitalize)"])
-            if st.button("Ajustar Caixa de Texto"):
-                st.session_state['action_texto'] = ('caixa_texto', cols_caixa, modo_caixa)
+            # 🔍 VALIDAÇÃO: Descobre se existem colunas que NÃO são do tipo 'object' ou 'string'
+            colunas_invalidas = [col for col in cols_caixa if not pd.api.types.is_object_dtype(df[col]) and not pd.api.types.is_string_dtype(df[col])]
+            
+            if colunas_invalidas:
+                # Mostra o aviso e impede que o resto do código (selectbox e botão) apareça
+                st.error(f"⚠️ Atenção: Apenas colunas de texto (str) podem ser ajustadas. Remova as colunas: {', '.join(colunas_invalidas)}")
+            else:
+                # Se todas forem texto, o fluxo continua normalmente
+                modo_caixa = st.selectbox("Formato desejado:", ["TUDO EM MAIÚSCULO", "tudo em minúsculo", "Primeira Letra Maiúscula (Capitalize)"])
+                
+                if st.button("Ajustar Caixa de Texto"):
+                    st.session_state['action_texto'] = ('caixa_texto', cols_caixa, modo_caixa)
 
     with c_txt2:
         st.markdown("#### 🆔 Gerador de ID Sequencial")
@@ -272,32 +287,91 @@ def render_formatacao_tab(df: pd.DataFrame):
     st.subheader("⚙️ Configurações Visuais de Exibição")
     c_moeda_sel, c_data_sel = st.columns(2)
 
+    if 'config_moedas' not in st.session_state:
+        st.session_state['config_moedas'] = {}
+    if 'config_datas' not in st.session_state:
+        st.session_state['config_datas'] = {}
+    if 'ctrl_moeda' not in st.session_state:
+        st.session_state['ctrl_moeda'] = []
+    if 'ctrl_data' not in st.session_state:
+        st.session_state['ctrl_data'] = []
+
     dict_formatos_moeda = {}
     dict_formatos_data = {}
 
+    # Criamos uma cópia do dataframe para a visualização na tela não quebrar
+    df_visualizacao = df.copy()
+
     with c_moeda_sel:
-        colunas_moeda = st.multiselect('💵 Colunas de Valor/Moeda:', options=df.columns, key='ctrl_moeda')
+        colunas_numericas_validas = [
+            col for col in df.columns 
+            if pd.api.types.is_numeric_dtype(df[col]) and not pd.api.types.is_bool_dtype(df[col])
+        ]
+        
+        colunas_moeda = st.multiselect(
+            '💵 Colunas de Valor/Moeda:', 
+            options=colunas_numericas_validas,
+            default=[c for c in st.session_state['ctrl_moeda'] if c in colunas_numericas_validas],
+            key='ctrl_moeda_input'
+        )
+        st.session_state['ctrl_moeda'] = colunas_moeda
+        
         for col in colunas_moeda:
-            formato = st.selectbox(f'Formato para "{col}":',
-                                   options=['R$ (Real - Brasil)', '$ (Dólar - EUA)', '€ (Euro)', 'Apenas Decimal (1.250,00)'],
-                                   key=f'fmt_moeda_{col}')
+            padrao_anterior = st.session_state['config_moedas'].get(col, 'R$ (Real - Brasil)')
+            formato = st.selectbox(
+                f'Formato para "{col}":',
+                options=['R$ (Real - Brasil)', '$ (Dólar - EUA)', '€ (Euro)', 'Apenas Decimal (1.250,00)'],
+                index=['R$ (Real - Brasil)', '$ (Dólar - EUA)', '€ (Euro)', 'Apenas Decimal (1.250,00)'].index(padrao_anterior),
+                key=f'fmt_moeda_{col}'
+            )
             dict_formatos_moeda[col] = formato
 
     with c_data_sel:
-        colunas_data = st.multiselect('📅 Colunas de Data Comum:', options=df.columns, key='ctrl_data')
+        colunas_data_validas = [
+            col for col in df.columns 
+            if not pd.api.types.is_numeric_dtype(df[col]) and not pd.api.types.is_bool_dtype(df[col])
+        ]
+        
+        colunas_data = st.multiselect(
+            '📅 Colunas de Data Comum:', 
+            options=colunas_data_validas,
+            default=[c for c in st.session_state['ctrl_data'] if c in colunas_data_validas],
+            key='ctrl_data_input',
+            help="Aceita colunas de data ou colunas de texto contendo datas."
+        )
+        st.session_state['ctrl_data'] = colunas_data
+        
         for col in colunas_data:
-            formato = st.selectbox(f'Formato para "{col}":',
-                                   options=['DD/MM/YYYY', 'YYYY-MM-DD', 'DD/MM/YYYY HH:MM'],
-                                   key=f'fmt_data_{col}')
-            dict_formatos_data[col] = formato
+            padrao_anterior = st.session_state['config_datas'].get(col, 'DD/MM/YYYY')
+            formato = st.selectbox(
+                f'Formato para "{col}":',
+                options=['DD/MM/YYYY', 'YYYY-MM-DD', 'DD/MM/YYYY HH:MM'],
+                index=['DD/MM/YYYY', 'YYYY-MM-DD', 'DD/MM/YYYY HH:MM'].index(padrao_anterior),
+                key=f'fmt_data_{col}'
+            )
+            dict_formatos_data[col] = formato 
 
+            try:
+                if col in df_visualizacao.columns:
+                    df_visualizacao[col] = pd.to_datetime(df_visualizacao[col], errors='coerce')
+            except Exception:
+                pass
     st.session_state['config_moedas'] = dict_formatos_moeda
     st.session_state['config_datas'] = dict_formatos_data
 
     st.divider()
     st.markdown("##### 📊 Visualização Parcial (Com as Formatações Escolhidas)")
-    st.dataframe(df, hide_index=True, use_container_width=True)
+    
+    mapa_formatos_unido = {**dict_formatos_moeda, **dict_formatos_data}
+    config_colunas_streamlit = get_column_config(list(df.columns), mapa_formatos_unido)
 
+    # Exibe a cópia que teve as strings de data convertidas temporariamente
+    st.dataframe(
+        df_visualizacao, 
+        hide_index=True, 
+        column_config=config_colunas_streamlit, 
+        use_container_width=True
+    )
 def render_rh_tab(df: pd.DataFrame):
     """Aba 5: Toolkit de RH."""
     st.subheader("🛠️ Toolkit de Gestão de Pessoas")
