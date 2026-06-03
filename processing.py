@@ -306,8 +306,9 @@ def processar_formatacoes_finais(df: pd.DataFrame, colunas_moeda: List[str], dic
         # Tentativa de conversão numérica geral para colunas restantes
         else:
             # Segurança: Evita converter colunas que parecem ser IDs, CEPs ou Documentos para evitar perda de zeros à esquerda
-            protected_keywords = {'cpf', 'cnpj', 'id', 'documento', 'cep', 'codigo', 'matricula'}
-            if not any(key in coluna.lower() for key in protected_keywords):
+            import re
+            protected_pattern = re.compile(r'\b(cpf|cnpj|id|documento|cep|codigo|c[oó]digo|matr[ií]cula)\b', re.IGNORECASE)
+            if not protected_pattern.search(coluna):
                 try:
                     if coluna != col_demissao:
                         df_final[coluna] = pd.to_numeric(df_final[coluna])
