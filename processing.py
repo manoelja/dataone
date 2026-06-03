@@ -27,6 +27,76 @@ def detectar_outliers_iqr(df: pd.DataFrame) -> Dict[str, int]:
 
     return outliers_count
 
+def validar_cpf(cpf: str) -> bool:
+    """
+    Valida um CPF verificando o formato e os dígitos verificadores.
+    CPF válido tem 11 dígitos e checksum correto.
+    """
+    # Remove caracteres especiais
+    cpf_limpo = "".join(filter(str.isdigit, str(cpf)))
+    
+    # Verifica tamanho
+    if len(cpf_limpo) != 11:
+        return False
+    
+    # Rejeita CPFs com todos os dígitos iguais
+    if len(set(cpf_limpo)) == 1:
+        return False
+    
+    # Valida primeiro dígito verificador
+    soma = sum(int(cpf_limpo[i]) * (10 - i) for i in range(9))
+    resto = soma % 11
+    digito1 = 0 if resto < 2 else 11 - resto
+    
+    if int(cpf_limpo[9]) != digito1:
+        return False
+    
+    # Valida segundo dígito verificador
+    soma = sum(int(cpf_limpo[i]) * (11 - i) for i in range(10))
+    resto = soma % 11
+    digito2 = 0 if resto < 2 else 11 - resto
+    
+    if int(cpf_limpo[10]) != digito2:
+        return False
+    
+    return True
+
+def validar_cnpj(cnpj: str) -> bool:
+    """
+    Valida um CNPJ verificando o formato e os dígitos verificadores.
+    CNPJ válido tem 14 dígitos e checksum correto.
+    """
+    # Remove caracteres especiais
+    cnpj_limpo = "".join(filter(str.isdigit, str(cnpj)))
+    
+    # Verifica tamanho
+    if len(cnpj_limpo) != 14:
+        return False
+    
+    # Rejeita CNPJs com todos os dígitos iguais
+    if len(set(cnpj_limpo)) == 1:
+        return False
+    
+    # Valida primeiro dígito verificador
+    pesos = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]
+    soma = sum(int(cnpj_limpo[i]) * pesos[i] for i in range(12))
+    resto = soma % 11
+    digito1 = 0 if resto < 2 else 11 - resto
+    
+    if int(cnpj_limpo[12]) != digito1:
+        return False
+    
+    # Valida segundo dígito verificador
+    pesos = [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]
+    soma = sum(int(cnpj_limpo[i]) * pesos[i] for i in range(13))
+    resto = soma % 11
+    digito2 = 0 if resto < 2 else 11 - resto
+    
+    if int(cnpj_limpo[13]) != digito2:
+        return False
+    
+    return True
+
 def gerar_cpf_valido() -> str:
     """Gera um CPF válido aleatoriamente."""
     nine_digits = [random.randint(0, 9) for _ in range(9)]
@@ -45,8 +115,53 @@ def gerar_cnpj_valido() -> str:
     return f"{''.join(map(str, cnpj[0:2]))}.{''.join(map(str, cnpj[2:5]))}.{''.join(map(str, cnpj[5:8]))}/{''.join(map(str, cnpj[8:12]))}-{''.join(map(str, cnpj[12:14]))}"
 
 def merge_dataframes(df1: pd.DataFrame, df2: pd.DataFrame, key1: str, key2: str) -> pd.DataFrame:
-    """Mescla dois DataFrames com base em chaves selecionadas (Left Join)."""
-    return pd.merge(df1, df2, left_on=key1, right_on=key2, how='left')
+    """
+    Mescla dois DataFrames com base em chaves selecionadas (Left Join).
+    
+    Args:
+        df1: DataFrame principal (base esquerda)
+        df2: DataFrame secundário (base direita)
+        key1: Coluna de ligação no DataFrame 1
+        key2: Coluna de ligação no DataFrame 2
+    
+    Returns:
+        DataFrame mesclado com as colunas de ambas as bases
+    """
+    try:
+        # Valida se as colunas existem
+        if key1 not in df1.columns:
+            raise ValueError(f"Coluna '{key1}' não encontrada no DataFrame principal")
+        if key2 not in df2.columns:
+            raise ValueError(f"Coluna '{key2}' não encontrada no DataFrame secundário")
+        
+        # Cria cópia para não modificar os originais
+        df1_copy = df1.copy()
+        df2_copy = df2.copy()
+        
+        # Remove duplicatas na chave secundária (mantém primeira ocorrência)
+        # Isso evita multiplicação de linhas
+        df2_copy = df2_copy.drop_duplicates(subset=[key2], keep='first')
+        
+        # Realiza o merge (LEFT JOIN)
+        resultado = pd.merge(
+            df1_copy, 
+            df2_copy, 
+            left_on=key1, 
+            right_on=key2, 
+            how='left',
+            suffixes=('', '_sec')  # Adiciona sufixo para colunas duplicadas
+        )
+        
+        # Remove a coluna chave duplicada se tiver sido criada
+        if key2 != key1 and key2 in resultado.columns:
+            # Mantém a coluna de ligação da base principal, remove a da secundária
+            if f'{key2}_sec' in resultado.columns:
+                resultado = resultado.drop(columns=[f'{key2}_sec'])
+        
+        return resultado
+        
+    except Exception as e:
+        raise Exception(f"Erro ao mesclar DataFrames: {str(e)}")
 
 def detectar_delimitador(file) -> str:
     """Detecta automaticamente o delimitador de um arquivo CSV."""
@@ -359,3 +474,198 @@ def exportar_para_excel(df: pd.DataFrame, colunas_moeda: List[str], dict_moedas:
                         worksheet.cell(row=row, column=idx+1).number_format = formato_excel_final
 
     return buffer.getvalue()
+
+# ==================== NOVAS FUNÇÕES PARA ABA DE RH REFORMULADA ====================
+
+def calcular_tempo_casa_v2(df: pd.DataFrame, col_admissao: str, categorizar: bool = False) -> pd.DataFrame:
+    """
+    Calcula o tempo de casa com opção de categorização em faixas (Junior/Pleno/Senior).
+    Retorna uma coluna 'tempo_casa_atual' com formato legível (ex: "2 anos e 5 meses")
+    e opcionalmente 'categoria_tempo' com a faixa.
+    """
+    df_res = df.copy()
+    df_res[col_admissao] = pd.to_datetime(df_res[col_admissao], dayfirst=True, errors='coerce')
+    hoje = pd.Timestamp.now().normalize()
+
+    def calcular_tempo(dt_adm):
+        if pd.isna(dt_adm):
+            return "N/A", None
+        
+        diff = hoje - dt_adm
+        anos = diff.days // 365
+        meses = (diff.days % 365) // 30
+        
+        tempo_str = f"{anos} anos e {meses} meses"
+        
+        # Categorização
+        categoria = None
+        if categorizar:
+            if anos < 2:
+                categoria = "🔵 Junior"
+            elif anos < 5:
+                categoria = "🟡 Pleno"
+            else:
+                categoria = "🟢 Senior"
+        
+        return tempo_str, categoria
+
+    # Aplicar função
+    resultado = df_res[col_admissao].apply(calcular_tempo)
+    df_res['tempo_casa_atual'] = resultado.apply(lambda x: x[0])
+    
+    if categorizar:
+        df_res['categoria_tempo'] = resultado.apply(lambda x: x[1])
+    
+    return df_res
+
+def gerar_relatorio_rh(df: pd.DataFrame, analise_tipo: str, col_analise: str) -> pd.DataFrame:
+    """
+    Gera relatórios estratégicos de RH com estatísticas descritivas.
+    Tipos: 'salario', 'tempo_casa', 'departamento'
+    """
+    df_res = df.copy()
+    
+    try:
+        if analise_tipo == "Estatísticas Descritivas de Salário" and col_analise:
+            # Converte para numeric se necessário
+            df_res[col_analise] = pd.to_numeric(df_res[col_analise], errors='coerce')
+            
+            stats = pd.DataFrame({
+                'Métrica': ['Mínimo', 'Q1 (25%)', 'Mediana', 'Média', 'Q3 (75%)', 'Máximo', 'Desvio Padrão'],
+                'Valor': [
+                    df_res[col_analise].min(),
+                    df_res[col_analise].quantile(0.25),
+                    df_res[col_analise].median(),
+                    df_res[col_analise].mean(),
+                    df_res[col_analise].quantile(0.75),
+                    df_res[col_analise].max(),
+                    df_res[col_analise].std()
+                ]
+            })
+            return stats
+        
+        elif analise_tipo == "Distribuição de Tempo de Casa" and col_analise:
+            # Encontra coluna de data se não estiver explícita
+            for col in df_res.columns:
+                if 'data' in col.lower() or 'date' in col.lower() or 'admiss' in col.lower():
+                    df_res[col] = pd.to_datetime(df_res[col], dayfirst=True, errors='coerce')
+                    diff = (pd.Timestamp.now() - df_res[col]).dt.days / 365
+                    faixas = pd.cut(diff, bins=[0, 2, 5, 10, 999], labels=['<2 anos', '2-5 anos', '5-10 anos', '>10 anos'])
+                    dist = faixas.value_counts().sort_index()
+                    return pd.DataFrame({'Faixa': dist.index, 'Quantidade': dist.values})
+        
+        return pd.DataFrame({'Status': ['Sem dados para análise']})
+    
+    except Exception as e:
+        return pd.DataFrame({'Erro': [str(e)]})
+
+def validar_compliance_rh_v2(df: pd.DataFrame, col_data: str = None, col_doc: str = None, 
+                             validacoes: List[str] = None) -> pd.DataFrame:
+    """
+    Validação de compliance avançada com múltiplas verificações.
+    Usa validadores robustos com checksum real para CPF/CNPJ.
+    Validações: 'datas', 'cpf', 'duplicacao', 'vazios'
+    """
+    df_res = df.copy()
+    hoje = pd.Timestamp.now().normalize()
+    
+    if validacoes is None:
+        validacoes = ["Datas Futuras/Inválidas", "Documentos Inválidos (CPF/CNPJ)"]
+    
+    erros = []
+    
+    # Validação: Datas Futuras/Inválidas
+    if "Datas Futuras/Inválidas" in validacoes and col_data:
+        try:
+            df_res[col_data] = pd.to_datetime(df_res[col_data], dayfirst=True, errors='coerce')
+            
+            # Contar datas futuras
+            datas_futuras = df_res[df_res[col_data] > hoje].copy()
+            qtd_futuras = len(datas_futuras)
+            
+            # Contar datas inválidas (NaT após conversão)
+            datas_invalidas = df_res[df_res[col_data].isna()].copy()
+            qtd_invalidas = len(datas_invalidas)
+            
+            if qtd_futuras > 0:
+                erros.append({
+                    'Tipo': '📅 Datas Futuras',
+                    'Quantidade': qtd_futuras,
+                    'Severidade': '🔴 Alta'
+                })
+            
+            if qtd_invalidas > 0:
+                erros.append({
+                    'Tipo': '⚠️ Datas Inválidas',
+                    'Quantidade': qtd_invalidas,
+                    'Severidade': '🟠 Média'
+                })
+        except Exception as e:
+            erros.append({
+                'Tipo': '❌ Erro ao validar datas',
+                'Quantidade': 0,
+                'Severidade': '🔴 Alta'
+            })
+    
+    # Validação: Documentos Inválidos (CPF/CNPJ com checksum real)
+    if "Documentos Inválidos (CPF/CNPJ)" in validacoes and col_doc:
+        def validar_documento(doc):
+            """Valida CPF ou CNPJ usando checksum"""
+            if pd.isna(doc):
+                return False
+            
+            doc_str = str(doc).strip()
+            if not doc_str:
+                return False
+            
+            # Tenta como CPF
+            if validar_cpf(doc_str):
+                return True
+            
+            # Tenta como CNPJ
+            if validar_cnpj(doc_str):
+                return True
+            
+            return False
+        
+        docs_invalidos = df_res[~df_res[col_doc].apply(validar_documento)].copy()
+        qtd_invalidos = len(docs_invalidos)
+        
+        if qtd_invalidos > 0:
+            erros.append({
+                'Tipo': '📄 Documentos Inválidos',
+                'Quantidade': qtd_invalidos,
+                'Severidade': '🟠 Média'
+            })
+    
+    # Validação: Duplicação
+    if "Duplicação de Documentos" in validacoes and col_doc:
+        # Remove NaN antes de checar duplicação
+        docs_validos = df_res[df_res[col_doc].notna() & (df_res[col_doc] != '')]
+        duplicados = docs_validos[docs_validos[col_doc].duplicated(keep=False)].copy()
+        qtd_duplicados = len(duplicados)
+        
+        if qtd_duplicados > 0:
+            erros.append({
+                'Tipo': '🔀 Documentos Duplicados',
+                'Quantidade': qtd_duplicados,
+                'Severidade': '🟡 Média'
+            })
+    
+    # Validação: Campos Vazios
+    if "Campos Obrigatórios Vazios" in validacoes:
+        vazios = df_res.isna().sum()
+        total_vazios = vazios.sum()
+        
+        if total_vazios > 0:
+            erros.append({
+                'Tipo': '⚠️ Campos Vazios',
+                'Quantidade': total_vazios,
+                'Severidade': '🟡 Baixa'
+            })
+    
+    if erros:
+        return pd.DataFrame(erros)
+    else:
+        return pd.DataFrame({'Status': ['✅ Nenhum erro encontrado']})
+
