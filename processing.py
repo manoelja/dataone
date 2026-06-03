@@ -138,18 +138,20 @@ def gerar_ids_sequenciais(df: pd.DataFrame, coluna_destino: str, inicio: int) ->
 
 def aplicar_mascara_documento(df: pd.DataFrame, col: str, tipo: str) -> pd.DataFrame:
     """Aplica máscara de CPF ou CNPJ em dados existentes."""
+    df_res = df.copy()
+
     def aplicar_cpf(val):
-        val = str(val).replace(r'\D', '', regex=False) if hasattr(val, 'replace') else "".join(filter(str.isdigit, str(val)))
+        val = "".join(filter(str.isdigit, str(val)))
         val = val.zfill(11)
         return f"{val[0:3]}.{val[3:6]}.{val[6:9]}-{val[9:11]}" if len(val) == 11 else val
 
     def aplicar_cnpj(val):
-        val = str(val).replace(r'\D', '', regex=False) if hasattr(val, 'replace') else "".join(filter(str.isdigit, str(val)))
+        val = "".join(filter(str.isdigit, str(val)))
         val = val.zfill(14)
         return f"{val[0:2]}.{val[2:5]}.{val[5:8]}/{val[8:12]}-{val[12:14]}" if len(val) == 14 else val
 
-    df[col] = df[col].apply(aplicar_cpf if "CPF" in tipo else aplicar_cnpj)
-    return df
+    df_res[col] = df_res[col].apply(aplicar_cpf if "CPF" in tipo else aplicar_cnpj)
+    return df_res
 
 def preencher_documentos_fakes(df: pd.DataFrame, col: str, tipo: str) -> pd.DataFrame:
     """Preenche uma coluna inteira com CPFs ou CNPJs válidos aleatórios."""
