@@ -253,10 +253,12 @@ def render_texto_tab(df: pd.DataFrame):
 
     with c_txt2:
         st.markdown("#### 🆔 Gerador de ID Sequencial")
+        NOVA_COLUNA_SENTINELA = "Criar nova coluna 'id_gerado'"
         col_id_destino = st.selectbox("Escolha uma coluna para substituir por IDs (ou criar uma nova):",
-                                      options=["Criar nova coluna 'id_gerado'"] + list(df.columns))
-        valor_inicio = st.number_input("Iniciar contagem a partir de:", min_value=0, value=1, step=1)
-        if st.button("Gerar Sequência de IDs"):
+                                      options=[NOVA_COLUNA_SENTINELA] + list(df.columns),
+                                      key='sb_id_destino')
+        valor_inicio = st.number_input("Iniciar contagem a partir de:", min_value=0, value=1, step=1, key='ni_id_inicio')
+        if st.button("Gerar Sequência de IDs", key='btn_gerar_ids'):
             st.session_state['action_texto'] = ('gerar_ids', col_id_destino, valor_inicio)
 
     st.divider()

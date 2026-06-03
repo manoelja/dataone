@@ -133,8 +133,12 @@ def ajustar_caixa_texto(df: pd.DataFrame, colunas: List[str], modo: str) -> pd.D
 
 def gerar_ids_sequenciais(df: pd.DataFrame, coluna_destino: str, inicio: int) -> pd.DataFrame:
     """Gera uma sequência de IDs numéricos."""
-    df[coluna_destino] = range(int(inicio), int(inicio) + len(df))
-    return df
+    df_res = df.copy()
+    # Normaliza a string sentinela da UI para o nome real da coluna
+    if coluna_destino.startswith("Criar nova coluna"):
+        coluna_destino = "id_gerado"
+    df_res[coluna_destino] = range(int(inicio), int(inicio) + len(df_res))
+    return df_res
 
 def aplicar_mascara_documento(df: pd.DataFrame, col: str, tipo: str) -> pd.DataFrame:
     """Aplica máscara de CPF ou CNPJ em dados existentes."""
