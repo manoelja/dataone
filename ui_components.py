@@ -465,18 +465,32 @@ def render_rh_tab(df: pd.DataFrame):
             )
         
         with col_rel2:
-            if colunas_numericas:
-                col_analise = st.selectbox(
-                    "Coluna para Análise:",
-                    options=colunas_numericas,
-                    key='rh_col_analise'
-                )
+            if analise_tipo == "Distribuição de Tempo de Casa":
+                if colunas_datas:
+                    col_analise = st.selectbox(
+                        "Coluna de Data para Análise:",
+                        options=colunas_datas,
+                        key='rh_col_analise_data'
+                    )
+                else:
+                    col_analise = None
+                    st.warning("⚠️ Nenhuma coluna de data encontrada")
             else:
-                col_analise = None
-                st.warning("⚠️ Nenhuma coluna numérica encontrada")
-        
+                if colunas_numericas:
+                    col_analise = st.selectbox(
+                        "Coluna para Análise:",
+                        options=colunas_numericas,
+                        key='rh_col_analise'
+                    )
+                else:
+                    col_analise = None
+                    st.warning("⚠️ Nenhuma coluna numérica encontrada")
+
         if st.button("📈 Gerar Análise", key='btn_analise_rh'):
-            st.session_state['action_rh'] = ('analise', analise_tipo, col_analise)
+            if col_analise:
+                st.session_state['action_rh'] = ('analise', analise_tipo, col_analise)
+            else:
+                st.error("⚠️ Por favor, selecione uma coluna válida para a análise.")
         
         # ===== Gráficos Visuais =====
         st.divider()
@@ -536,13 +550,19 @@ def render_rh_tab(df: pd.DataFrame):
         col_pre1, col_pre2 = st.columns([2, 1])
         with col_pre1:
             st.markdown("**Preview (Primeiras 5 linhas):**")
-            preview_tempo = df[[col_adm]].head(5).copy()
-            preview_tempo.columns = ["Data Admissão"]
-            st.dataframe(preview_tempo, hide_index=True, use_container_width=True)
+            if col_adm:
+                preview_tempo = df[[col_adm]].head(5).copy()
+                preview_tempo.columns = ["Data Admissão"]
+                st.dataframe(preview_tempo, hide_index=True, use_container_width=True)
+            else:
+                st.caption("Aguardando seleção de coluna...")
         
         with col_pre2:
             if st.button("🔄 Calcular Tempo de Casa", key='btn_tempo_casa_novo'):
-                st.session_state['action_rh'] = ('tempo_casa', col_adm, categorizar)
+                if col_adm:
+                    st.session_state['action_rh'] = ('tempo_casa', col_adm, categorizar)
+                else:
+                    st.error("⚠️ Por favor, selecione a coluna de admissão.")
 
     # ==================== TAB 3: GESTÃO SALARIAL ====================
     with tab3:
@@ -595,45 +615,54 @@ def render_rh_tab(df: pd.DataFrame):
             col_prev1, col_prev2 = st.columns([2, 1])
             
             with col_prev1:
-                salarios_sample = df[[col_salario]].head(10).copy()
-                salarios_sample.columns = ["Salário"]
-                st.dataframe(salarios_sample, hide_index=True, use_container_width=True)
+                if col_salario:
+                    salarios_sample = df[[col_salario]].head(10).copy()
+                    salarios_sample.columns = ["Salário"]
+                    st.dataframe(salarios_sample, hide_index=True, use_container_width=True)
+                else:
+                    st.caption("Aguardando seleção de coluna...")
             
             with col_prev2:
-                st.metric("Min", f"R$ {df[col_salario].min():.2f}")
-                st.metric("Média", f"R$ {df[col_salario].mean():.2f}")
-                st.metric("Max", f"R$ {df[col_salario].max():.2f}")
-            
+                if col_salario:
+                    st.metric("Min", f"R$ {df[col_salario].min():.2f}")
+                    st.metric("Média", f"R$ {df[col_salario].mean():.2f}")
+                    st.metric("Max", f"R$ {df[col_salario].max():.2f}")
+                else:
+                    st.caption("Aguardando seleção...")
+
             st.divider()
             st.markdown("##### 📈 Gráfico de Distribuição Salarial")
-            
+
             # Cria histograma de salários
-            salarios_clean = df[col_salario].dropna()
-            
-            col_dist1, col_dist2 = st.columns([2, 1])
-            
-            with col_dist1:
-                # Histograma
-                st.markdown("**Histograma de Salários**")
-                bins = st.slider("Número de faixas:", 5, 50, 15, key='rh_salary_bins')
-                
-                # Cria histograma com índices válidos
-                counts, bin_edges = np.histogram(salarios_clean, bins=bins)
-                bin_labels = [f"R${bin_edges[i]:.0f}-{bin_edges[i+1]:.0f}" for i in range(len(bin_edges)-1)]
-                
-                hist_df = pd.DataFrame({
-                    'Faixa': bin_labels,
-                    'Quantidade': counts
-                })
-                
-                st.bar_chart(hist_df.set_index('Faixa'))
-            
-            with col_dist2:
-                st.markdown("**Estatísticas**")
-                st.metric("Q1 (25%)", f"R$ {salarios_clean.quantile(0.25):.2f}")
-                st.metric("Mediana", f"R$ {salarios_clean.median():.2f}")
-                st.metric("Q3 (75%)", f"R$ {salarios_clean.quantile(0.75):.2f}")
-                st.metric("StdDev", f"R$ {salarios_clean.std():.2f}")
+            salarios_clean = df[col_salario].dropna() if col_salario else pd.Series()
+
+            if not salarios_clean.empty:
+                col_dist1, col_dist2 = st.columns([2, 1])
+
+                with col_dist1:
+                    # Histograma
+                    st.markdown("**Histograma de Salários**")
+                    bins = st.slider("Número de faixas:", 5, 50, 15, key='rh_salary_bins')
+
+                    # Cria histograma com índices válidos
+                    counts, bin_edges = np.histogram(salarios_clean, bins=bins)
+                    bin_labels = [f"R${bin_edges[i]:.0f}-{bin_edges[i+1]:.0f}" for i in range(len(bin_edges)-1)]
+
+                    hist_df = pd.DataFrame({
+                        'Faixa': bin_labels,
+                        'Quantidade': counts
+                    })
+
+                    st.bar_chart(hist_df.set_index('Faixa'))
+
+                with col_dist2:
+                    st.markdown("**Estatísticas**")
+                    st.metric("Q1 (25%)", f"R$ {salarios_clean.quantile(0.25):.2f}")
+                    st.metric("Mediana", f"R$ {salarios_clean.median():.2f}")
+                    st.metric("Q3 (75%)", f"R$ {salarios_clean.quantile(0.75):.2f}")
+                    st.metric("StdDev", f"R$ {salarios_clean.std():.2f}")
+            else:
+                st.info(" Selecione uma coluna de salário válida para ver a distribuição.")
             
             if st.button("💾 Aplicar Banding Salarial", key='btn_banding_novo', type='primary'):
                 st.session_state['action_rh'] = ('banding', col_salario, faixas_input)

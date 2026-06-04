@@ -209,8 +209,8 @@ def main():
                 if key2 not in df_sec.columns:
                     raise ValueError(f"Coluna '{key2}' não encontrada na base secundária")
                 
-                # Executa o merge
-                df_mesclado = processing.merge_dataframes(df_tratado, df_sec, key1, key2)
+                # Executa o merge (agora retorna tupla com estatísticas)
+                df_mesclado, stats_merge = processing.merge_dataframes(df_tratado, df_sec, key1, key2)
                 
                 # Mostra estatísticas do merge
                 linhas_antes = len(df_tratado)
@@ -222,6 +222,24 @@ def main():
                 
                 st.success("✅ Bases mescladas com sucesso!")
                 st.balloons()
+                
+                # ⚠️ AVISO sobre duplicatas removidas (FIX BUG #2)
+                if stats_merge['linhas_removidas_duplicatas'] > 0:
+                    st.warning(f"""
+                    ⚠️ **{stats_merge['linhas_removidas_duplicatas']} linhas duplicadas removidas** da base secundária!
+                    - A base secundária tinha {stats_merge['linhas_secundaria_original']} linhas
+                    - Após remover duplicatas em '{key2}': {stats_merge['linhas_secundaria_apos_dedup']} linhas
+                    - Apenas a primeira ocorrência de cada chave foi mantida
+                    """)
+                
+                # ⚠️ AVISO sobre conversão de tipos de dados (FIX BUG #3)
+                if stats_merge['tipos_convertidos']:
+                    st.info(f"""
+                    ℹ️ **Tipos de dados convertidos para compatibilidade:**
+                    - Chave '{key1}' (tipo original: {stats_merge['tipo_dados_key1']})
+                    - Chave '{key2}' (tipo original: {stats_merge['tipo_dados_key2']})
+                    - Ambas convertidas para: **String**
+                    """)
                 
                 # Exibe estatísticas do merge
                 st.divider()
@@ -257,7 +275,7 @@ def main():
                     st.success("✅ Versão salva! Use o seletor no topo para trabalhar com ela.")
                     st.rerun()
                 
-                registrar_log(f"🔗 Bases mescladas: {linhas_antes} + {len(df_sec)} → {linhas_depois} linhas, {colunas_antes} → {colunas_depois} colunas")
+                registrar_log(f"🔗 Bases mescladas: {linhas_antes} + {stats_merge['linhas_secundaria_apos_dedup']} → {linhas_depois} linhas, {colunas_antes} → {colunas_depois} colunas")
                 
             except Exception as e:
                 st.error(f"❌ Erro ao mesclar bases: {str(e)}")
