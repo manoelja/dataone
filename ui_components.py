@@ -5,738 +5,399 @@ from typing import Dict, Any, List, Tuple
 import processing
 
 def render_header():
-    """Renderiza o cabeçalho da aplicação."""
+    """Renderiza o cabeçalho da aplicação com customização de abas."""
+    # Injeção de CSS para espaçamento e centralização das abas
+    st.markdown("""
+        <style>
+            /* Aumenta o espaço entre as abas no menu superior */
+            [data-baseweb="tab-list"] {
+                gap: 40px !important;
+            }
+            
+            /* Centraliza o título e ajusta o visual de cada aba */
+            button[data-baseweb="tab"] {
+                display: flex !important;
+                justify-content: center !important;
+                text-align: center !important;
+                padding-left: 20px !important;
+                padding-right: 20px !important;
+                min-width: 120px !important; /* Garante área de clique centralizada */
+            }
+        </style>
+    """, unsafe_allow_html=True)
+
     st.markdown("""
     # 🎲 DATAONE <span style='font-size: 18px; color: #888;'>| Central Inteligente de Data processing</span>
-    ##### Faça upload, limpe, padronize, aplique regras de negócio e exporte seus dados sem planilhas quebradas.
+    ##### Faça upload, limpe, padronize e analise seus dados sem planilhas quebradas.
     ---
     """, unsafe_allow_html=True)
 
-def render_sidebar(file_upload_func, audit_log: List[str]):
-    """Renderiza a barra lateral com upload e histórico."""
-    with st.sidebar:
-        st.header("📥 Entrada de Dados")
-        file_upload = file_upload_func()
-
-        st.divider()
-        st.header("🔍Histórico🌐")
-        if audit_log:
-            for log in reversed(audit_log):
-                st.caption(log)
-        else:
-            st.caption("Nenhuma ação realizada ainda.")
-        return file_upload
-
 def get_column_config(df_columns: List[str], fmt_map: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Converte o mapa de formatos simplificado do processing.py
-    para os objetos st.column_config.
-    """
+    """Converte o mapa de formatos para os objetos st.column_config."""
     config = {}
     for col in df_columns:
         fmt = fmt_map.get(col)
-        if not fmt:
-            continue
-
-        if fmt == "datetime":
-            config[col] = st.column_config.DatetimeColumn(col, format="DD/MM/YYYY")
-        elif fmt == 'R$ (Real - Brasil)':
-            config[col] = st.column_config.NumberColumn(col, format="R$ %,.2f")
-        elif fmt == '$ (Dólar - EUA)':
-            config[col] = st.column_config.NumberColumn(col, format="$ %,.2f")
-        elif fmt == '€ (Euro)':
-            config[col] = st.column_config.NumberColumn(col, format="€ %,.2f")
-        elif fmt == 'Apenas Decimal (1.250,00)':
-            config[col] = st.column_config.NumberColumn(col, format="%,.2f")
-        elif fmt in ['DD/MM/YYYY', 'YYYY-MM-DD', 'DD/MM/YYYY HH:MM']:
-            config[col] = st.column_config.DatetimeColumn(col, format=fmt)
+        if not fmt: continue
+        if fmt == "datetime": config[col] = st.column_config.DatetimeColumn(col, format="DD/MM/YYYY")
+        elif fmt == 'R$ (Real - Brasil)': config[col] = st.column_config.NumberColumn(col, format="R$ %,.2f")
+        elif fmt == '$ (Dólar - EUA)': config[col] = st.column_config.NumberColumn(col, format="$ %,.2f")
+        elif fmt == '€ (Euro)': config[col] = st.column_config.NumberColumn(col, format="€ %,.2f")
+        elif fmt == 'Apenas Decimal (1.250,00)': config[col] = st.column_config.NumberColumn(col, format="%,.2f")
+        elif fmt in ['DD/MM/YYYY', 'YYYY-MM-DD', 'DD/MM/YYYY HH:MM']: config[col] = st.column_config.DatetimeColumn(col, format=fmt)
     return config
 
 def render_diagnostico_tab(df: pd.DataFrame):
     """Aba 1: Diagnóstico do Arquivo."""
     st.subheader("🔍 Análise de Saúde dos Dados")
-
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("Total de Linhas", df.shape[0])
     m2.metric("Total de Colunas", df.shape[1])
     m3.metric("Células Vazias", df.isna().sum().sum())
-
-    linhas_duplicadas = df.duplicated().sum()
-    if linhas_duplicadas > 0:
-        m4.metric("Linhas Duplicadas", linhas_duplicadas, delta=f"-{linhas_duplicadas} alertas", delta_color="inverse")
-    else:
-        m4.metric("Linhas Duplicadas", 0)
+    m4.metric("Linhas Duplicadas", df.duplicated().sum())
 
     st.divider()
-
-    # --- Nova Seção: Detecção de Outliers ---
     outliers = processing.detectar_outliers_iqr(df)
     if outliers:
-        with st.expander("⚠️ Alerta de Outliers (Anomalias Numéricas)", expanded=True):
-            st.warning("Foram detectados valores atípicos que podem distorcer a análise.")
-            outlier_df = pd.DataFrame(list(outliers.items()), columns=['Coluna', 'Qtd de Outliers'])
-            st.table(outlier_df)
-    else:
-        st.success("✅ Nenhuma anomalia numérica significativa detectada.")
+        with st.expander("⚠️ Alerta de Outliers", expanded=True):
+            st.table(pd.DataFrame(list(outliers.items()), columns=['Coluna', 'Qtd de Outliers']))
+    else: st.success("✅ Nenhuma anomalia detectada.")
 
-    st.markdown("### Perfil de Metadados por Coluna")
-
+    st.markdown("### Perfil de Metadados")
     df_tipos = pd.DataFrame({
         'Coluna': df.columns,
-        'Tipo Nativo': df.dtypes.astype(str),
-        'Valores Preenchidos (%)': ((df.notna().sum() / len(df)) * 100).round(1) if len(df) > 0 else 0,
-        'Valores Nulos (Qtd)': df.isna().sum()
+        'Tipo': df.dtypes.astype(str),
+        'Preenchimento (%)': ((df.notna().sum() / len(df)) * 100).round(1) if len(df) > 0 else 0,
+        'Vazios': df.isna().sum()
     })
-
-    mapa_tipos = {
-        'object': 'Texto / Categoria',
-        'int64': 'Número Inteiro',
-        'float64': 'Número Decimal',
-        'datetime64[ns]': 'Data / Hora',
-        'bool': 'Lógico (V/F)'
-    }
-    df_tipos['Tipo Simplificado'] = df_tipos['Tipo Nativo'].map(mapa_tipos).fillna(df_tipos['Tipo Nativo'])
-
-    st.dataframe(
-        df_tipos[['Coluna', 'Tipo Simplificado', 'Valores Preenchidos (%)', 'Valores Nulos (Qtd)']],
-        hide_index=True,
-        use_container_width=True
-    )
+    st.dataframe(df_tipos, hide_index=True, use_container_width=True)
 
 def render_limpeza_tab(df: pd.DataFrame, id_arquivo: str):
     """Aba 2: Limpeza de Dados."""
-    st.subheader("🧼 Tratamento de Anomalias e Nulos")
-
-    col_limp_1, col_limp_2 = st.columns(2)
-
-    with col_limp_1:
+    st.subheader("🧼 Tratamento de Anomalias")
+    c1, c2 = st.columns(2)
+    with c1:
         st.markdown("#### Remover Duplicados")
-        remover_dup_geral = st.checkbox("Remover linhas 100% idênticas na tabela", value=False, key=f"dup_geral_{id_arquivo}")
-        ccolunas_chave_dup = st.multiselect("Ou escolher colunas-chave para checar duplicidade (Ex: CPF, ID):", options=df.columns, key=f"dup_chave_{id_arquivo}")
-
+        geral = st.checkbox("Geral (100% idênticas)", key=f"dup_geral_{id_arquivo}")
+        chaves = st.multiselect("Por Colunas-Chave:", options=df.columns, key=f"dup_chave_{id_arquivo}")
         if st.button("Remover Duplicados", key=f"btn_dup_{id_arquivo}"):
-            if remover_dup_geral or ccolunas_chave_dup:
-                st.session_state['action_limpeza'] = ('remover_dup', remover_dup_geral, ccolunas_chave_dup)
-            else:
-                st.error("⚠️ Por favor, selecione a opção 'Geral' ou escolha colunas-chave.")
-
-    with col_limp_2:
-        st.markdown("#### Tratar Valores Faltantes (Nulos)")
-        st.markdown("Tratar os valores vazios é essencial para evitar erros ")
-
-        chave_controle = f"selecionadas_{id_arquivo}"
-        if chave_controle not in st.session_state:
-            st.session_state[chave_controle] = []
-
-        colunas_nulas = st.multiselect(
-            "Selecione colunas para tratar valores vazios:",
-            options=df.columns,
-            default=st.session_state[chave_controle],
-            key=f"nulos_cols_{id_arquivo}"
-        )
-        st.session_state[chave_controle] = colunas_nulas
-
-        if colunas_nulas:
-            estrategia_nulos = st.radio(
-                "O que fazer com os vazios dessas colunas?",
-                options=["Preencher com Zero (0)", "Preencher com 'Não Informado'", "Excluir a linha inteira"],
-                key=f"estrategia_nulos_{id_arquivo}"
-            )
-
-            if st.button("Aplicar Tratamento de Nulos", key=f"btn_nulos_{id_arquivo}"):
-                st.session_state['action_limpeza'] = ('tratar_nulos', colunas_nulas, estrategia_nulos)
+            if geral or chaves: st.session_state['action_limpeza'] = ('remover_dup', geral, chaves)
+            else: st.error("Selecione uma opção.")
+    with c2:
+        st.markdown("#### Tratar Nulos")
+        cols = st.multiselect("Colunas:", options=df.columns, key=f"nulos_cols_{id_arquivo}")
+        if cols:
+            est = st.radio("Estratégia:", ["Preencher com Zero (0)", "Preencher com 'Não Informado'", "Excluir a linha inteira"], key=f"est_nulos_{id_arquivo}")
+            if st.button("Aplicar Nulos", key=f"btn_nulos_{id_arquivo}"):
+                st.session_state['action_limpeza'] = ('tratar_nulos', cols, est)
 
     st.divider()
-    st.markdown("#### 🔗 Mesclar Arquivos (Join)")
-    with st.expander("Unir esta base com outro arquivo", expanded=False):
-        secondary_file = st.file_uploader("Faça upload do arquivo secundário:", type=['xlsx', 'csv'], key=f"merge_file_{id_arquivo}")
-
-        if secondary_file:
-            # Carrega e armazena o DataFrame secundário em session_state de forma persistente
-            try:
-                df_sec = processing.carregar_dados(secondary_file)
-                st.session_state[f'df_sec_stored_{id_arquivo}'] = df_sec.copy()
-                
-                st.success("✅ Arquivo secundário carregado com sucesso!")
-                st.markdown(f"**Colunas disponíveis:** {', '.join(df_sec.columns.tolist())}")
-                
-                c_k1, c_k2 = st.columns(2)
-                with c_k1:
-                    key1 = st.selectbox(
-                        "Coluna de ligação (Base Principal):", 
-                        options=df.columns, 
-                        key=f"key1_{id_arquivo}"
-                    )
-                with c_k2:
-                    key2 = st.selectbox(
-                        "Coluna de ligação (Base Secundária):", 
-                        options=df_sec.columns, 
-                        key=f"key2_{id_arquivo}"
-                    )
-                
-                st.info(f"💡 Será feito um LEFT JOIN usando: **{key1}** (principal) → **{key2}** (secundária)")
-
-                if st.button("🔗 Mesclar Bases de Dados", type="primary", key=f"btn_merge_{id_arquivo}"):
-                    # Passa o DataFrame já armazenado, não o arquivo
-                    st.session_state['action_merge'] = (df_sec.copy(), key1, key2)
-            except Exception as e:
-                st.error(f"❌ Erro ao carregar arquivo secundário: {str(e)}")
+    st.markdown("#### ❌ Excluir Colunas")
+    cols_ex = st.multiselect("Selecione uma ou mais colunas para remover:", options=df.columns, key=f"del_col_{id_arquivo}")
+    if st.button("Excluir Colunas Selecionadas", key=f"btn_del_{id_arquivo}", type="primary"):
+        if cols_ex: st.session_state['action_limpeza'] = ('excluir_coluna', cols_ex)
+        else: st.error("⚠️ Selecione pelo menos uma coluna.")
 
     st.divider()
-    st.markdown("#### ❌ Excluir Coluna da Tabela")
-    coluna_para_excluir = st.selectbox(
-        "Selecione a coluna que deseja remover permanentemente:",
-        options=["Selecione..."] + list(df.columns),
-        key=f"coluna_deletar_{id_arquivo}"
-    )
-    if st.button("Remover Coluna Permanentemente", type="primary", key=f"btn_excluir_{id_arquivo}"):
-        if coluna_para_excluir != "Selecione...":
-            st.session_state['action_limpeza'] = ('excluir_coluna', coluna_para_excluir, None)
+    st.markdown("#### ➕ Inserir Coluna")
+    nome = st.text_input("Nome da nova coluna:", key=f"new_col_name_{id_arquivo}")
+    pos = st.selectbox("Inserir antes de (Esquerda):", options=list(df.columns) + [None], key=f"new_col_pos_{id_arquivo}")
+    val = st.text_input("Valor Padrão:", value="", key=f"new_col_val_{id_arquivo}")
+    if st.button("Inserir", key=f"btn_ins_{id_arquivo}"):
+        if not nome.strip():
+            st.error("⚠️ O nome da coluna não pode estar vazio.")
+        elif nome in df.columns:
+            st.error(f"⚠️ Já existe uma coluna chamada '{nome}'. Escolha um nome diferente.")
         else:
-            st.error("⚠️ Por favor, selecione uma coluna válida para exclusão.")
+            st.session_state['action_limpeza'] = ('inserir_coluna', nome, pos, val)
 
     st.divider()
-    st.markdown("#### ➕ Inserir Nova Coluna Entre Duas Existentes")
-    nome_nova_coluna = st.text_input("Digite o nome da nova coluna:", placeholder="Ex: status_pagamento...", key=f"nome_da_nova_coluna_clean_{id_arquivo}")
-
-    c_pos1, c_pos2 = st.columns(2)
-    with c_pos1:
-        col_esquerda = st.selectbox("Coluna da Esquerda (X):", options=list(df.columns), key=f"col_esquerda_pos_{id_arquivo}")
-    with c_pos2:
-        # PROTEÇÃO CONTRA VALOR VAZIO / NONE
-        if col_esquerda and col_esquerda in df.columns:
-            idx_esq_atual = list(df.columns).index(col_esquerda)
-            opcoes_direita = list(df.columns)[idx_esq_atual + 1:]
-            if opcoes_direita:
-                col_direita = st.selectbox("Coluna da Direita (Y):", options=opcoes_direita, key=f"col_direita_pos_{id_arquivo}")
-            else:
-                st.caption("⚠️ Não há colunas depois desta.")
-                col_direita = None
-        else:
-            st.caption("Aguardando seleção da coluna...")
-            col_direita = None
-
-    tipo_valor_padrao = st.selectbox(
-        "Valor inicial da nova coluna:",
-        options=["Em branco (Vazio)", "Número Zero (0)", "Texto Customizado"],
-        key=f"tipo_val_padrao_clean_{id_arquivo}"
-    )
-
-    valor_padrao = ""
-    if tipo_valor_padrao == "Número Zero (0)":
-        valor_padrao = 0
-    elif tipo_valor_padrao == "Texto Customizado":
-        valor_padrao = st.text_input("Digite o texto padrão para todas as linhas:", value="Padrão", key=f"txt_padrao_input_clean_{id_arquivo}")
-
-    if st.button("Inserir Coluna no Meio", key=f"btn_inserir_{id_arquivo}"):
-        if nome_nova_coluna.strip() == "":
-            st.error("⚠️ Por favor, digite um nome válido para a coluna.")
-        elif nome_nova_coluna in df.columns:
-            st.error("⚠️ Já existe uma coluna com esse nome na tabela.")
-        else:
-            st.session_state['action_limpeza'] = ('inserir_coluna', nome_nova_coluna, col_direita, valor_padrao)
+    if st.button("🧼 Faxina Automática (Strip)", key=f"btn_strip_{id_arquivo}"):
+        st.session_state['action_limpeza'] = ('strip_all', True)
 
     st.divider()
-    st.markdown("#### 🧼 Faxina Invisível Automática")
-    if st.button("Aparar espaços em branco fantasmas (Strip) de todas as células de texto", key=f"btn_strip_{id_arquivo}"):
-        st.session_state['action_limpeza'] = ('strip_all', True, None)
-
-    st.divider()
-    st.markdown("##### 📊 Visualização Parcial (Dados Atuais)")
-    
-    # Mostra informações da base atual
-    col_info1, col_info2, col_info3 = st.columns(3)
-    with col_info1:
-        st.metric("Total de Linhas", len(df))
-    with col_info2:
-        st.metric("Total de Colunas", len(df.columns))
-    with col_info3:
-        percentual_completo = (1 - (df.isna().sum().sum() / (len(df) * len(df.columns)))) * 100
-        st.metric("Completude (%)", f"{percentual_completo:.1f}%")
-    
-    # Exibe preview com expander para facilitar navegação
-    with st.expander("📋 Ver dados da tabela", expanded=True):
-        st.dataframe(df, hide_index=True, use_container_width=True)
+    st.dataframe(df.head(100), hide_index=True, use_container_width=True)
 
 def render_texto_tab(df: pd.DataFrame):
     """Aba 3: Padronização de Texto."""
-    st.subheader("🔤 Formatação de Strings e Cadastro")
-
-    c_txt1, c_txt2 = st.columns(2)
-    with c_txt1:
-        st.markdown("#### Caixa do Texto")
-        cols_caixa = st.multiselect("Selecionar colunas para ajustar LETRAS:", options=df.columns, key='txt_caixa')
-        
-        if cols_caixa:
-            # 🔍 VALIDAÇÃO: Descobre se existem colunas que NÃO são do tipo 'object' ou 'string'
-            colunas_invalidas = [col for col in cols_caixa if not pd.api.types.is_object_dtype(df[col]) and not pd.api.types.is_string_dtype(df[col])]
-            
-            if colunas_invalidas:
-                # Mostra o aviso e impede que o resto do código (selectbox e botão) apareça
-                st.error(f"⚠️ Atenção: Apenas colunas de texto (str) podem ser ajustadas. Remova as colunas: {', '.join(colunas_invalidas)}")
-            else:
-                # Se todas forem texto, o fluxo continua normalmente
-                modo_caixa = st.selectbox("Formato desejado:", ["TUDO EM MAIÚSCULO", "tudo em minúsculo", "Primeira Letra Maiúscula (Capitalize)"])
-                
-                if st.button("Ajustar Caixa de Texto"):
-                    st.session_state['action_texto'] = ('caixa_texto', cols_caixa, modo_caixa)
-
-    with c_txt2:
-        st.markdown("#### 🆔 Gerador de ID Sequencial")
-        NOVA_COLUNA_SENTINELA = "Criar nova coluna 'id_gerado'"
-        col_id_destino = st.selectbox("Escolha uma coluna para substituir por IDs (ou criar uma nova):",
-                                      options=[NOVA_COLUNA_SENTINELA] + list(df.columns),
-                                      key='sb_id_destino')
-        valor_inicio = st.number_input("Iniciar contagem a partir de:", min_value=0, value=1, step=1, key='ni_id_inicio')
-        if st.button("Gerar Sequência de IDs", key='btn_gerar_ids'):
-            st.session_state['action_texto'] = ('gerar_ids', col_id_destino, valor_inicio)
+    st.subheader("🔤 Formatação de Strings")
+    c1, c2 = st.columns(2)
+    with c1:
+        cols = st.multiselect("Ajustar Caixa:", options=df.columns, key='txt_caixa')
+        if cols:
+            modo = st.selectbox("Modo:", ["TUDO EM MAIÚSCULO", "tudo em minúsculo", "Capitalize"])
+            if st.button("Ajustar Caixa"): st.session_state['action_texto'] = ('caixa_texto', cols, modo)
+    with c2:
+        col_id = st.selectbox("Gerar ID em:", options=["Nova Coluna"] + list(df.columns), key='id_col')
+        start = st.number_input("Início:", value=1)
+        if st.button("Gerar IDs"): st.session_state['action_texto'] = ('gerar_ids', col_id, start)
 
     st.divider()
-    st.markdown("#### 🇧🇷 Máscaras e Geradores de Documentos")
-    acao_doc = st.selectbox("O que deseja fazer com os documentos?",
-                            options=["Apenas aplicar máscara em dados existentes", "Substituir tudo por CPFs Válidos Aleatórios", "Substituir tudo por CNPJs Válidos Aleatórios"])
-
-    col_doc = st.selectbox("Selecione a coluna alvo:", ["Selecione..."] + list(df.columns), key='col_doc_alvo')
-
+    st.markdown("#### 🇧🇷 Máscaras de Documentos")
+    col_doc = st.selectbox("Coluna Alvo:", options=["Selecione..."] + list(df.columns), key='doc_col')
     if col_doc != "Selecione...":
-        if acao_doc == "Apenas aplicar máscara em dados existentes":
-            tipo_doc = st.selectbox("Tipo de documento cadastrado:", ["CPF (11 dígitos)", "CNPJ (14 dígitos)"])
-            if st.button("Aplicar Máscara"):
-                st.session_state['action_texto'] = ('mascara_doc', col_doc, tipo_doc)
-        elif acao_doc == "Substituir tudo por CPFs Válidos Aleatórios":
-            if st.button("Gerar CPFs Fake Válidos"):
-                st.session_state['action_texto'] = ('fake_docs', col_doc, "CPF")
-        elif acao_doc == "Substituir tudo por CNPJs Válidos Aleatórios":
-            if st.button("Gerar CNPJs Fake Válidos"):
-                st.session_state['action_texto'] = ('fake_docs', col_doc, "CNPJ")
+        tipo = st.selectbox("Tipo:", ["CPF", "CNPJ"])
+        if st.button("Aplicar Máscara"): st.session_state['action_texto'] = ('mascara_doc', col_doc, tipo)
+        if st.button("Gerar Fakes"): st.session_state['action_texto'] = ('fake_docs', col_doc, tipo)
 
     st.divider()
-    st.markdown("##### 📊 Visualização Parcial (Pós Padronização de Texto)")
-    st.dataframe(df, hide_index=True, use_container_width=True)
+    st.dataframe(df.head(100), hide_index=True, use_container_width=True)
 
 def render_formatacao_tab(df: pd.DataFrame):
     """Aba 4: Formatação Visual."""
-    st.subheader("⚙️ Configurações Visuais de Exibição")
-    c_moeda_sel, c_data_sel = st.columns(2)
+    st.subheader("⚙️ Configurações Visuais")
+    c1, c2 = st.columns(2)
+    
+    # Permite selecionar qualquer coluna, não apenas as que já são números
+    # (Pois o usuário quer justamente transformar texto sujo em moeda)
+    col_m = c1.multiselect('💵 Moedas:', options=df.columns, key='ctrl_moeda', help="Selecione colunas de valor para formatar (Ex: R$, US$)")
+    dict_m = {c: c1.selectbox(f'Fmt {c}:', ['R$ (Real - Brasil)', '$ (Dólar - EUA)', '€ (Euro)', 'Apenas Decimal (1.250,00)'], key=f'm_{c}') for c in col_m}
+    
+    col_d = c2.multiselect('📅 Datas:', options=df.columns, key='ctrl_data', help="Selecione colunas que contenham datas")
+    dict_d = {c: c2.selectbox(f'Fmt {c}:', ['DD/MM/YYYY', 'YYYY-MM-DD', 'DD/MM/YYYY HH:MM'], key=f'd_{c}') for c in col_d}
+    
+    st.session_state['config_moedas'], st.session_state['config_datas'] = dict_m, dict_d
+    st.divider()
+    
+    # Exibe o preview com a configuração visual aplicada
+    st.markdown("##### Preview com Formatação Visual")
+    fmt_config = get_column_config(df.columns.tolist(), {**dict_m, **dict_d})
+    st.dataframe(df.head(100), hide_index=True, column_config=fmt_config, use_container_width=True)
 
-    if 'config_moedas' not in st.session_state:
-        st.session_state['config_moedas'] = {}
-    if 'config_datas' not in st.session_state:
-        st.session_state['config_datas'] = {}
-    if 'ctrl_moeda' not in st.session_state:
-        st.session_state['ctrl_moeda'] = []
-    if 'ctrl_data' not in st.session_state:
-        st.session_state['ctrl_data'] = []
+def render_analysis_tab(df: pd.DataFrame):
+    """Aba 5: Analysis Hub (Generalizado)."""
+    st.subheader("📊 Analysis Hub")
+    
+    if df.empty:
+        st.warning("⚠️ Carregue um arquivo para visualizar as análises.")
+        return
 
-    dict_formatos_moeda = {}
-    dict_formatos_data = {}
+    # 1. Dashboard de KPIs (Detecta o que for possível)
+    st.markdown("#### 📈 Métricas de Impacto")
+    kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+    
+    # Headcount/Linhas
+    total_linhas = len(df)
+    kpi1.metric("Total de Registros", total_linhas)
+    
+    # Valores Numéricos (Tenta detectar coluna de valor/salário)
+    col_valor = next((c for c in df.columns if any(x in c.lower() for x in ['valor', 'total', 'salario', 'preço', 'receita'])), None)
+    if col_valor:
+        valores = pd.to_numeric(df[col_valor].astype(str).str.replace(r'[R\$\s\.€]', '', regex=True).str.replace(',', '.', regex=False), errors='coerce')
+        kpi2.metric("Soma Total", f"{valores.sum():,.2f}")
+        kpi3.metric("Média Geral", f"{valores.mean():,.2f}")
+    else:
+        kpi2.metric("Soma Total", "N/A")
+        kpi3.metric("Média Geral", "N/A")
 
-    # Criamos uma cópia do dataframe para a visualização na tela não quebrar
-    df_visualizacao = df.copy()
-
-    with c_moeda_sel:
-        colunas_numericas_validas = [
-            col for col in df.columns 
-            if pd.api.types.is_numeric_dtype(df[col]) and not pd.api.types.is_bool_dtype(df[col])
-        ]
-        
-        colunas_moeda = st.multiselect(
-            '💵 Colunas de Valor/Moeda:', 
-            options=colunas_numericas_validas,
-            default=[c for c in st.session_state['ctrl_moeda'] if c in colunas_numericas_validas],
-            key='ctrl_moeda_input'
-        )
-        st.session_state['ctrl_moeda'] = colunas_moeda
-        
-        for col in colunas_moeda:
-            padrao_anterior = st.session_state['config_moedas'].get(col, 'R$ (Real - Brasil)')
-            formato = st.selectbox(
-                f'Formato para "{col}":',
-                options=['R$ (Real - Brasil)', '$ (Dólar - EUA)', '€ (Euro)', 'Apenas Decimal (1.250,00)'],
-                index=['R$ (Real - Brasil)', '$ (Dólar - EUA)', '€ (Euro)', 'Apenas Decimal (1.250,00)'].index(padrao_anterior),
-                key=f'fmt_moeda_{col}'
-            )
-            dict_formatos_moeda[col] = formato
-
-    with c_data_sel:
-        colunas_data_validas = [
-            col for col in df.columns 
-            if not pd.api.types.is_numeric_dtype(df[col]) and not pd.api.types.is_bool_dtype(df[col])
-        ]
-        
-        colunas_data = st.multiselect(
-            '📅 Colunas de Data Comum:', 
-            options=colunas_data_validas,
-            default=[c for c in st.session_state['ctrl_data'] if c in colunas_data_validas],
-            key='ctrl_data_input',
-            help="Aceita colunas de data ou colunas de texto contendo datas."
-        )
-        st.session_state['ctrl_data'] = colunas_data
-        
-        for col in colunas_data:
-            padrao_anterior = st.session_state['config_datas'].get(col, 'DD/MM/YYYY')
-            formato = st.selectbox(
-                f'Formato para "{col}":',
-                options=['DD/MM/YYYY', 'YYYY-MM-DD', 'DD/MM/YYYY HH:MM'],
-                index=['DD/MM/YYYY', 'YYYY-MM-DD', 'DD/MM/YYYY HH:MM'].index(padrao_anterior),
-                key=f'fmt_data_{col}'
-            )
-            dict_formatos_data[col] = formato 
-
-            try:
-                if col in df_visualizacao.columns:
-                    df_visualizacao[col] = pd.to_datetime(df_visualizacao[col], errors='coerce')
-            except Exception:
-                pass
-    st.session_state['config_moedas'] = dict_formatos_moeda
-    st.session_state['config_datas'] = dict_formatos_data
+    # Datas (Tenta detectar coluna de data)
+    col_data_ref = next((c for c in df.columns if any(x in c.lower() for x in ['data', 'admissao', 'venda', 'criado'])), None)
+    if col_data_ref:
+        kpi4.metric("Ref. Temporal", col_data_ref[:15])
+    else:
+        kpi4.metric("Ref. Temporal", "N/A")
 
     st.divider()
-    st.markdown("##### 📊 Visualização Parcial (Com as Formatações Escolhidas)")
+
+    # 2. Insights e Sugestões Automáticas
+    st.markdown("#### 💡 Insights do Sistema")
+    col_cat = next((c for c in df.columns if any(x in c.lower() for x in ['categoria', 'depto', 'produto', 'status', 'tipo'])), None)
+
+    insight_cols = st.columns(2)
+    with insight_cols[0]:
+        if col_cat and col_valor:
+            st.info(f"✨ **Insight:** Detectamos '{col_cat}' e '{col_valor}'. Podemos analisar a soma por categoria.")
+        elif col_cat:
+            st.info(f"✨ **Insight:** Podemos visualizar a distribuição por '{col_cat}'.")
     
-    mapa_formatos_unido = {**dict_formatos_moeda, **dict_formatos_data}
-    config_colunas_streamlit = get_column_config(list(df.columns), mapa_formatos_unido)
+    with insight_cols[1]:
+        if col_data_ref:
+            st.info(f"✨ **Insight:** Detectamos '{col_data_ref}'. Podemos analisar a evolução no tempo.")
 
-    # Exibe a cópia que teve as strings de data convertidas temporariamente
-    st.dataframe(
-        df_visualizacao, 
-        hide_index=True, 
-        column_config=config_colunas_streamlit, 
-        use_container_width=True
-    )
-def render_rh_tab(df: pd.DataFrame):
-    """Aba 5: Toolkit de Gestão de Pessoas (Reformulado)."""
-    st.subheader("🛠️ Toolkit Avançado de Gestão de Pessoas")
-    
-    # Criando tabs para organizar melhor as funcionalidades
-    tab1, tab2, tab3, tab4 = st.tabs([
-        "📊 Análise & Dashboards",
-        "📅 Tempo de Serviço", 
-        "💰 Gestão Salarial",
-        "✅ Compliance & Auditoria"
-    ])
+    st.divider()
 
-    # ==================== TAB 1: ANÁLISE & DASHBOARDS ====================
-    with tab1:
-        st.markdown("#### 📊 Análise Estratégica de RH")
-        st.caption("Visualize métricas-chave e tendências de sua equipe")
-        
-        col_anal1, col_anal2 = st.columns(2)
-        
-        with col_anal1:
-            st.markdown("##### Colunas Disponíveis para Análise:")
-            colunas_numericas = [col for col in df.columns 
-                                if pd.api.types.is_numeric_dtype(df[col]) and not pd.api.types.is_bool_dtype(df[col])]
-            colunas_datas = [col for col in df.columns 
-                            if pd.api.types.is_datetime64_any_dtype(df[col]) or 
-                            (pd.api.types.is_object_dtype(df[col]) and ('data' in col.lower() or 'date' in col.lower()))]
-            
-            if colunas_numericas:
-                st.write(f"💵 **Colunas Numéricas:** {len(colunas_numericas)}")
-                for col in colunas_numericas[:3]:
-                    st.caption(f"  • {col}")
-            
-            if colunas_datas:
-                st.write(f"📅 **Colunas de Data:** {len(colunas_datas)}")
-                for col in colunas_datas[:3]:
-                    st.caption(f"  • {col}")
-        
-        with col_anal2:
-            st.markdown("##### Resumo da Base:")
-            st.metric("Total de Colaboradores", len(df))
-            st.metric("Total de Colunas", len(df.columns))
-            percentual_completo = (1 - (df.isna().sum().sum() / (len(df) * len(df.columns)))) * 100
-            st.metric("Dados Completos (%)", f"{percentual_completo:.1f}%")
-        
-        st.divider()
-        st.markdown("##### 🎯 Gerar Relatório de Análise")
-        
-        col_rel1, col_rel2 = st.columns(2)
-        
-        with col_rel1:
-            analise_tipo = st.selectbox(
-                "Tipo de Análise:",
-                options=[
-                    "Estatísticas Descritivas de Salário",
-                    "Distribuição de Tempo de Casa",
-                    "Perfil de Departamentos"
-                ],
-                key='rh_analise_tipo'
-            )
-        
-        with col_rel2:
-            if analise_tipo == "Distribuição de Tempo de Casa":
-                if colunas_datas:
-                    col_analise = st.selectbox(
-                        "Coluna de Data para Análise:",
-                        options=colunas_datas,
-                        key='rh_col_analise_data'
-                    )
-                else:
-                    col_analise = None
-                    st.warning("⚠️ Nenhuma coluna de data encontrada")
-            else:
-                if colunas_numericas:
-                    col_analise = st.selectbox(
-                        "Coluna para Análise:",
-                        options=colunas_numericas,
-                        key='rh_col_analise'
-                    )
-                else:
-                    col_analise = None
-                    st.warning("⚠️ Nenhuma coluna numérica encontrada")
+    # 3. Visualizações Estratégicas
+    viz_tab1, viz_tab2, viz_tab3 = st.tabs(["📊 Distribuição", "📉 Estatística", "🔗 Correlações"])
 
-        if st.button("📈 Gerar Análise", key='btn_analise_rh'):
-            if col_analise:
-                st.session_state['action_rh'] = ('analise', analise_tipo, col_analise)
-            else:
-                st.error("⚠️ Por favor, selecione uma coluna válida para a análise.")
+    with viz_tab1:
+        st.markdown("##### Distribuição de Headcount")
+        # Garante colunas únicas antes de agrupar
+        df_dist = df.loc[:, ~df.columns.duplicated()].copy()
+        col_dist = st.selectbox("Agrupar por:", options=[c for c in [col_cat] if c and c in df_dist.columns] + list(df_dist.columns), key='an_dist_sel')
         
-        # ===== Gráficos Visuais =====
-        st.divider()
-        st.markdown("##### 📊 Visualizações Automáticas")
-        
-        col_viz1, col_viz2 = st.columns(2)
-        
-        # Gráfico de distribuição de valores numéricos
-        with col_viz1:
-            if colunas_numericas:
-                col_selecionada = st.selectbox(
-                    "Selecione coluna para histograma:",
-                    options=colunas_numericas,
-                    key='rh_hist_col'
-                )
-                
-                if col_selecionada:
-                    dados_validos = df[col_selecionada].dropna()
-                    st.markdown(f"**Distribuição de {col_selecionada}**")
-                    st.bar_chart(dados_validos.value_counts().head(10))
-        
-        # Gráfico de preenchimento de dados
-        with col_viz2:
-            st.markdown("**Preenchimento de Dados por Coluna (%)**")
-            completude = ((df.notna().sum() / len(df)) * 100).sort_values(ascending=True)
-            st.bar_chart(completude)
+        if col_dist:
+            # Agregação robusta para evitar erro de dimensão no index
+            counts = df_dist[col_dist].value_counts().reset_index()
+            counts.columns = ['Categoria', 'Quantidade']
+            st.bar_chart(counts.set_index('Categoria'))
 
-    # ==================== TAB 2: TEMPO DE SERVIÇO ====================
-    with tab2:
-        st.markdown("#### 📅 Cálculo de Tempo de Serviço")
-        st.caption("Calcule e categorize automaticamente o tempo de permanência dos colaboradores")
+    with viz_tab2:
+        st.markdown("##### Análise Estatística")
+        # Filtra colunas numéricas
+        numeric_cols_only = df.select_dtypes(include=[np.number]).columns.tolist()
         
-        col_adm = st.selectbox(
-            "Selecione a coluna com Data de Admissão:",
-            options=df.columns,
-            key='rh_col_admissao_tempo'
-        )
-        
-        col_temp1, col_temp2 = st.columns(2)
-        
-        with col_temp1:
-            categorizar = st.checkbox(
-                "✅ Categorizar em Faixas (Junior/Pleno/Senior)",
-                value=True,
-                key='rh_categorizar_tempo'
-            )
-        
-        with col_temp2:
-            if categorizar:
-                st.markdown("**Faixas Padrão:**")
-                st.caption("• Junior: < 2 anos")
-                st.caption("• Pleno: 2-5 anos")
-                st.caption("• Senior: > 5 anos")
-        
-        st.divider()
-        
-        col_pre1, col_pre2 = st.columns([2, 1])
-        with col_pre1:
-            st.markdown("**Preview (Primeiras 5 linhas):**")
-            if col_adm:
-                preview_tempo = df[[col_adm]].head(5).copy()
-                preview_tempo.columns = ["Data Admissão"]
-                st.dataframe(preview_tempo, hide_index=True, use_container_width=True)
-            else:
-                st.caption("Aguardando seleção de coluna...")
-        
-        with col_pre2:
-            if st.button("🔄 Calcular Tempo de Casa", key='btn_tempo_casa_novo'):
-                if col_adm:
-                    st.session_state['action_rh'] = ('tempo_casa', col_adm, categorizar)
-                else:
-                    st.error("⚠️ Por favor, selecione a coluna de admissão.")
-
-    # ==================== TAB 3: GESTÃO SALARIAL ====================
-    with tab3:
-        st.markdown("#### 💰 Gestão de Faixas Salariais")
-        st.caption("Defina ranges salariais e valide colaboradores fora da faixa")
-        
-        # Selecionar coluna de salário
-        colunas_numericas = [col for col in df.columns 
-                            if pd.api.types.is_numeric_dtype(df[col]) and not pd.api.types.is_bool_dtype(df[col])]
-        
-        if not colunas_numericas:
-            st.error("❌ Nenhuma coluna numérica encontrada para análise salarial")
+        if not numeric_cols_only:
+            st.warning("⚠️ Nenhuma coluna numérica encontrada para cálculos estatísticos.")
         else:
-            col_salario = st.selectbox(
-                "Coluna de Salário:",
-                options=colunas_numericas,
-                key='rh_col_salario_novo'
-            )
+            col_target = st.selectbox("Selecione a coluna para calcular:", options=numeric_cols_only)
             
-            st.divider()
-            st.markdown("##### 📋 Definir Faixas Salariais")
-            
-            modo_faixa = st.radio(
-                "Como deseja definir as faixas?",
-                options=["Usar Faixas Padrão", "Definir Manualmente"],
-                key='rh_modo_faixa'
-            )
-            
-            if modo_faixa == "Usar Faixas Padrão":
-                st.info("""
-                **Faixas Padrão (BRL):**
-                - 🔵 Junior: R$ 0 - R$ 3.000
-                - 🟡 Pleno: R$ 3.000 - R$ 6.000
-                - 🟢 Senior: R$ 6.000 - R$ 10.000
-                - 🔴 Executivo: > R$ 10.000
-                """)
-                faixas_input = "0-3000:Junior; 3000-6000:Pleno; 6000-10000:Senior; 10000-999999:Executivo"
-            else:
-                st.markdown("**Formato:** `min-max:Categoria; min-max:Categoria`")
-                st.markdown("**Exemplo:** `0-3000:Junior; 3000-6000:Pleno; 6000-99999:Senior`")
-                faixas_input = st.text_area(
-                    "Defina as faixas salariais:",
-                    value="0-3000:Junior; 3000-6000:Pleno; 6000-10000:Senior",
-                    key='rh_faixas_manual'
-                )
-            
-            st.divider()
-            st.markdown("##### 📊 Prévia de Distribuição")
-            
-            col_prev1, col_prev2 = st.columns([2, 1])
-            
-            with col_prev1:
-                if col_salario:
-                    salarios_sample = df[[col_salario]].head(10).copy()
-                    salarios_sample.columns = ["Salário"]
-                    st.dataframe(salarios_sample, hide_index=True, use_container_width=True)
-                else:
-                    st.caption("Aguardando seleção de coluna...")
-            
-            with col_prev2:
-                if col_salario:
-                    st.metric("Min", f"R$ {df[col_salario].min():.2f}")
-                    st.metric("Média", f"R$ {df[col_salario].mean():.2f}")
-                    st.metric("Max", f"R$ {df[col_salario].max():.2f}")
-                else:
-                    st.caption("Aguardando seleção...")
+            if col_target:
+                dados_num = df[col_target].dropna()
+                
+                # --- Seção: Estatísticas Descritivas ---
+                st.markdown(f"**📌 Resumo Estatístico: {col_target}**")
+                stat_c1, stat_c2, stat_c3 = st.columns(3)
+                
+                media = dados_num.mean()
+                mediana = dados_num.median()
+                moda_series = dados_num.mode()
+                moda = moda_series[0] if not moda_series.empty else 0
 
-            st.divider()
-            st.markdown("##### 📈 Gráfico de Distribuição Salarial")
+                with stat_c1:
+                    st.metric("Média", f"{media:,.2f}")
+                    st.caption("🔍 **Média**: Soma de todos os valores dividida pela quantidade. Representa o centro de 'equilíbrio' dos dados.")
+                
+                with stat_c2:
+                    st.metric("Mediana", f"{mediana:,.2f}")
+                    st.caption("🔍 **Mediana**: O valor central. 50% dos dados estão abaixo e 50% acima deste número. Menos afetada por valores extremos.")
+                
+                with stat_c3:
+                    st.metric("Moda", f"{moda:,.2f}")
+                    st.caption("🔍 **Moda**: O valor que mais se repete na coluna. Indica a tendência de maior frequência.")
 
-            # Cria histograma de salários
-            salarios_clean = df[col_salario].dropna() if col_salario else pd.Series()
+                st.divider()
+                
+                # Histograma
+                st.markdown(f"**Histograma de Distribuição ({col_target})**")
+                counts, bin_edges = np.histogram(dados_num, bins=15)
+                bin_labels = [f"{bin_edges[i]:.1f}" for i in range(len(bin_edges)-1)]
+                hist_df = pd.DataFrame({'Faixa': bin_labels, 'Qtd': counts})
+                st.bar_chart(hist_df.set_index('Faixa'))
 
-            if not salarios_clean.empty:
-                col_dist1, col_dist2 = st.columns([2, 1])
-
-                with col_dist1:
-                    # Histograma
-                    st.markdown("**Histograma de Salários**")
-                    bins = st.slider("Número de faixas:", 5, 50, 15, key='rh_salary_bins')
-
-                    # Cria histograma com índices válidos
-                    counts, bin_edges = np.histogram(salarios_clean, bins=bins)
-                    bin_labels = [f"R${bin_edges[i]:.0f}-{bin_edges[i+1]:.0f}" for i in range(len(bin_edges)-1)]
-
-                    hist_df = pd.DataFrame({
-                        'Faixa': bin_labels,
-                        'Quantidade': counts
-                    })
-
-                    st.bar_chart(hist_df.set_index('Faixa'))
-
-                with col_dist2:
-                    st.markdown("**Estatísticas**")
-                    st.metric("Q1 (25%)", f"R$ {salarios_clean.quantile(0.25):.2f}")
-                    st.metric("Mediana", f"R$ {salarios_clean.median():.2f}")
-                    st.metric("Q3 (75%)", f"R$ {salarios_clean.quantile(0.75):.2f}")
-                    st.metric("StdDev", f"R$ {salarios_clean.std():.2f}")
-            else:
-                st.info(" Selecione uma coluna de salário válida para ver a distribuição.")
-            
-            if st.button("💾 Aplicar Banding Salarial", key='btn_banding_novo', type='primary'):
-                st.session_state['action_rh'] = ('banding', col_salario, faixas_input)
-
-    # ==================== TAB 4: COMPLIANCE & AUDITORIA ====================
-    with tab4:
-        st.markdown("#### ✅ Validação de Compliance & Auditoria")
-        st.caption("Identifique problemas de dados e inconsistências")
+    with viz_tab3:
+        st.markdown("##### Cruzamento de Dados (Correlações)")
+        c_corr1, c_corr2 = st.columns(2)
         
-        col_comp1, col_comp2 = st.columns(2)
+        # Tenta preparar dados numéricos para correlação
+        df_corr = df.loc[:, ~df.columns.duplicated()].copy()
+        numeric_cols = df_corr.select_dtypes(include=[np.number]).columns.tolist()
         
-        with col_comp1:
-            st.markdown("##### 🔍 Validações Disponíveis")
-            validacoes = st.multiselect(
-                "Selecione as validações a executar:",
-                options=[
-                    "Datas Futuras/Inválidas",
-                    "Documentos Inválidos (CPF/CNPJ)",
-                    "Duplicação de Documentos",
-                    "Campos Obrigatórios Vazios"
-                ],
-                default=["Datas Futuras/Inválidas", "Documentos Inválidos (CPF/CNPJ)"],
-                key='rh_validacoes'
-            )
-        
-        with col_comp2:
-            st.markdown("##### 📋 Colunas para Validar")
-            colunas_data = [col for col in df.columns 
-                           if pd.api.types.is_datetime64_any_dtype(df[col]) or 
-                           (pd.api.types.is_object_dtype(df[col]) and 'data' in col.lower())]
-            colunas_doc = [col for col in df.columns 
-                          if pd.api.types.is_object_dtype(df[col]) and 
-                          ('cpf' in col.lower() or 'cnpj' in col.lower() or 'documento' in col.lower())]
+        if len(numeric_cols) >= 2:
+            col_x = c_corr1.selectbox("Eixo X:", options=numeric_cols, index=0)
+            col_y = c_corr2.selectbox("Eixo Y:", options=numeric_cols, index=min(1, len(numeric_cols)-1))
             
-            if colunas_data:
-                col_data_val = st.selectbox("Coluna de Data:", options=colunas_data, key='rh_col_data_comp')
-            else:
-                col_data_val = None
-                st.caption("⚠️ Nenhuma coluna de data encontrada")
-            
-            if colunas_doc:
-                col_doc_val = st.selectbox("Coluna de Documento:", options=colunas_doc, key='rh_col_doc_comp')
-            else:
-                col_doc_val = None
-                st.caption("⚠️ Nenhuma coluna de documento encontrada")
-        
-        st.divider()
-        st.markdown("##### 📊 Relatório de Erros Esperados")
-        
-        erros_estimados = pd.DataFrame({
-            'Validação': validacoes,
-            'Status': ['✅ Pronto' for _ in validacoes]
-        })
-        st.dataframe(erros_estimados, hide_index=True, use_container_width=True)
-        
-        if st.button("🛡️ Executar Validação de Compliance", key='btn_compliance_novo', type='primary'):
-            st.session_state['action_rh'] = (
-                'compliance', 
-                col_data_val, 
-                col_doc_val,
-                validacoes
-            )
+            if col_x and col_y:
+                # Cria um dataframe de plotagem com nomes de colunas únicos (aliases)
+                df_plot = df_corr[[col_x, col_y]].dropna()
+                df_plot.columns = ["Eixo_X", "Eixo_Y"]
+                st.scatter_chart(df_plot, x="Eixo_X", y="Eixo_Y")
+        else:
+            st.info("⚠️ Necessário ao menos 2 colunas numéricas para correlação.")
 
     st.divider()
-    st.markdown("##### 📊 Visualização dos Dados (RH)")
-    st.dataframe(df, hide_index=True, use_container_width=True)
+
+    with st.expander("✅ Ver Dados Brutos"):
+        st.dataframe(df, hide_index=True, use_container_width=True)
+
+def render_formulas_tab():
+    """Aba 7: Central de Fórmulas Excel."""
+    st.subheader("📑 Central de Fórmulas Excel")
+    st.markdown("Consulte rapidamente as principais fórmulas para turbinar suas planilhas.")
+
+    # Base de dados das fórmulas
+    formulas = [
+        {"nome": "SOMA", "cat": "Matemáticas", "sin": "=SOMA(intervalo)", "desc": "Soma todos os números em um intervalo de células.", "ex": "=SOMA(A1:A10)"},
+        {"nome": "MÉDIA", "cat": "Estatísticas", "sin": "=MÉDIA(intervalo)", "desc": "Retorna a média aritmética dos argumentos.", "ex": "=MÉDIA(B1:B20)"},
+        {"nome": "SE", "cat": "Lógicas", "sin": "=SE(teste_lógico; valor_se_verdadeiro; valor_se_falso)", "desc": "Verifica se uma condição é atendida e retorna um valor se VERDADEIRO e outro se FALSO.", "ex": "=SE(C2>=7; \"Aprovado\"; \"Reprovado\")"},
+        {"nome": "SEERRO", "cat": "Lógicas", "sin": "=SEERRO(valor; valor_se_erro)", "desc": "Retorna um valor que você especifica se uma fórmula avaliar um erro; caso contrário, retorna o resultado da fórmula.", "ex": "=SEERRO(A1/B1; 0)"},
+        {"nome": "PROCV", "cat": "Pesquisa e Referência", "sin": "=PROCV(valor_procurado; matriz_tabela; num_indice_coluna; [procurar_intervalo])", "desc": "Procura um valor na primeira coluna à esquerda de uma tabela e retorna um valor na mesma linha de uma coluna especificada.", "ex": "=PROCV(\"Produto A\"; A2:E50; 3; FALSO)"},
+        {"nome": "PROCX", "cat": "Pesquisa e Referência", "sin": "=PROCX(pesquisa_valor; matriz_pesquisa; matriz_retorno; [se_não_encontrado]; [modo_correspondência])", "desc": "Versão moderna e flexível do PROCV. Pesquisa um intervalo ou uma matriz e retorna o item correspondente.", "ex": "=PROCX(F2; A2:A100; C2:C100; \"Não encontrado\")"},
+        {"nome": "ÍNDICE", "cat": "Pesquisa e Referência", "sin": "=ÍNDICE(matriz; num_linha; [num_coluna])", "desc": "Retorna um valor ou a referência a um valor de dentro de uma tabela ou intervalo.", "ex": "=ÍNDICE(A1:C10; 2; 3)"},
+        {"nome": "CORRESP", "cat": "Pesquisa e Referência", "sin": "=CORRESP(valor_procurado; matriz_procurada; [tipo_correspondência])", "desc": "Procura um item especificado em um intervalo de células e retorna a posição relativa desse item.", "ex": "=CORRESP(\"Venda\"; A1:A10; 0)"},
+        {"nome": "CONCAT", "cat": "Texto", "sin": "=CONCAT(texto1; [texto2]; ...)", "desc": "Agrupa o texto de vários intervalos e/ou cadeias de texto.", "ex": "=CONCAT(\"Olá \"; \"Mundo\")"},
+        {"nome": "HOJE", "cat": "Data e Hora", "sin": "=HOJE()", "desc": "Retorna o número de série da data atual.", "ex": "=HOJE()"},
+        {"nome": "AGORA", "cat": "Data e Hora", "sin": "=AGORA()", "desc": "Retorna o número de série da data e hora atuais.", "ex": "=AGORA()"},
+        {"nome": "CONT.SE", "cat": "Estatísticas", "sin": "=CONT.SE(intervalo; critérios)", "desc": "Calcula o número de células dentro de um intervalo que atendem a determinados critérios.", "ex": "=CONT.SE(A1:A500; \">100\")"},
+        {"nome": "SOMASE", "cat": "Matemáticas", "sin": "=SOMASE(intervalo; critérios; [intervalo_soma])", "desc": "Adiciona as células especificadas por um determinado critério.", "ex": "=SOMASE(B2:B25; \"Frutas\"; C2:C25)"},
+        {"nome": "SOMASES", "cat": "Matemáticas", "sin": "=SOMASES(intervalo_soma; intervalo_critérios1; critérios1; ...)", "desc": "Adiciona as células em um intervalo que atendem a vários critérios.", "ex": "=SOMASES(E2:E100; A2:A100; \">01/01/2023\"; B2:B100; \"SP\")"}
+    ]
+
+    # Barra de Pesquisa e Filtros
+    c_search, c_filter = st.columns([2, 1])
+    search_term = c_search.text_input("🔍 Pesquisar fórmula:", placeholder="Ex: PROCV, soma, data...", help="Busque por nome, categoria ou descrição.")
+    
+    categorias = sorted(list(set(f['cat'] for f in formulas)))
+    selected_cat = c_filter.multiselect("📂 Filtrar Categorias:", options=categorias, default=categorias)
+
+    # Lógica de Filtragem
+    filtered_formulas = [
+        f for f in formulas 
+        if (search_term.lower() in f['nome'].lower() or 
+            search_term.lower() in f['cat'].lower() or 
+            search_term.lower() in f['desc'].lower()) and
+           (f['cat'] in selected_cat)
+    ]
+
+    st.divider()
+
+    # Exibição em Grid/Cards
+    if not filtered_formulas:
+        st.info("Nenhuma fórmula encontrada com esses critérios.")
+    else:
+        # Mostra em 2 colunas para layout moderno
+        cols = st.columns(2)
+        for i, f in enumerate(filtered_formulas):
+            with cols[i % 2]:
+                with st.container(border=True):
+                    st.markdown(f"### **{f['nome']}**")
+                    st.caption(f"📁 Categoria: {f['cat']}")
+                    st.markdown(f"**Descrição:** {f['desc']}")
+                    st.markdown("**Sintaxe:**")
+                    st.code(f['sin'], language="excel")
+                    st.markdown(f"**Exemplo:** `{f['ex']}`")
+                    # O botão de cópia já está embutido no st.code do Streamlit!
 
 def render_export_tab(df: pd.DataFrame, column_config: Dict[str, Any]):
     """Aba 6: Exportação."""
-    st.subheader("📊 Visualização Prévia dos Dados Tratados")
+    st.subheader("📊 Preview Final")
     st.dataframe(df, hide_index=True, column_config=column_config, use_container_width=True)
+    st.info("Use o botão na barra lateral ou abaixo para exportar.")
 
+def render_footer():
+    """Renderiza o rodapé simplificado com emojis e botão de texto 'Sobre mim'."""
+    st.markdown("<br><br><br><br><br>", unsafe_allow_html=True)
     st.divider()
-    st.subheader("💾 Exportar para Excel (.xlsx)")
-
-    # O botão de download será tratado no main.py para gerenciar o buffer de bytes
-    st.info("Clique no botão abaixo para baixar a base formatada.")
+    
+    col_left, col_right = st.columns([2, 1])
+    
+    with col_left:
+        st.markdown("### **🎲 DATAONE**")
+        st.markdown("""
+        Central inteligente de processamento projetada para simplificar fluxos complexos. 
+        Transformando dados brutos em inteligência estratégica.
+        """)
+        
+    with col_right:
+        st.markdown("<div style='text-align: right;'>", unsafe_allow_html=True)
+        st.markdown("**Desenvolvido por Manoel — Data Scientist**")
+        
+        # Botões apenas com Material Icons (Design Minimalista)
+        c_space, ic1, ic2, ic3, ic4 = st.columns([2, 1, 1, 1, 1])
+        with ic1: st.link_button("", "https://github.com/", icon=":material/terminal:", help="GitHub", use_container_width=True)
+        with ic2: st.link_button("", "https://linkedin.com/", icon=":material/share:", help="LinkedIn", use_container_width=True)
+        with ic3: st.link_button("", "#", icon=":material/public:", help="Portfólio", use_container_width=True)
+        with ic4:
+            if st.button("", key="btn_sobre_mim", icon=":material/person:", help="Sobre o Desenvolvedor", use_container_width=True):
+                st.session_state.show_developer = not st.session_state.show_developer
+                st.rerun()
+        st.markdown("</div>", unsafe_allow_html=True)
+    
+    # 2. Seção "Sobre o Desenvolvedor" (Toggle)
+    if st.session_state.show_developer:
+        st.markdown("<br>", unsafe_allow_html=True)
+        with st.chat_message("user", avatar=":material/person:"):
+            st.markdown("""
+            #### **Sobre o Desenvolvedor**
+            Manoel é um Data Scientist apaixonado por transformar dados brutos em inteligência e por democratizar o 
+            acesso ao conhecimento técnico. Com experiência em modelagem preditiva e arquitetura de dados, 
+            criou esta plataforma como um recurso para a comunidade brasileira de tecnologia.
+            """)
