@@ -1,18 +1,17 @@
 """
-DATAONE — Central Inteligente de Data processing.
-Consolidado em arquitetura Flat.
+DATAONE — Central Inteligente de Data Processing.
+Arquitetura modular para deploy no Streamlit Cloud.
 """
 
 from __future__ import annotations
-from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Optional
 from dataclasses import dataclass, field
 
 import pandas as pd
 import streamlit as st
 
-import processing
-import ui_components
+from core import data_processing, rh_tools
+from ui import components
 
 
 # ===================== Gestão de Estado =====================
@@ -23,7 +22,7 @@ NAMESPACE: str = "data"
 class AppState:
     df_original: pd.DataFrame
     df_tratado: pd.DataFrame
-    audit_log: List[str] = field(default_factory=list)
+    audit_log: list[str] = field(default_factory=list)
     ultimo_id_arquivo: Optional[str] = None
     config_importacao: Dict[str, Any] = field(default_factory=dict)
 
@@ -50,87 +49,96 @@ def pop_action(key: str) -> Optional[Any]:
 
 # ===================== Processamento de Ações =====================
 
-def aplicar_acao_limpeza(action: tuple, df: pd.DataFrame) -> Tuple[pd.DataFrame, str]:
+def aplicar_acao_limpeza(action: tuple, df: pd.DataFrame) -> tuple[pd.DataFrame, str]:
     tipo, *args = action
     if tipo == "remover_dup":
-        return processing.remover_duplicados(df, args[0], args[1]), f"🧼 Duplicados removidos (Geral: {args[0]}, Chaves: {args[1]})."
+        return data_processing.remover_duplicados(df, args[0], args[1]), f"🧼 Duplicados removidos (Geral: {args[0]}, Chaves: {args[1]})."
     if tipo == "tratar_nulos":
-        return processing.tratar_nulos(df, args[0], args[1]), f"🧼 Valores nulos tratados em {args[0]} via {args[1]}."
+        return data_processing.tratar_nulos(df, args[0], args[1]), f"🧼 Valores nulos tratados em {args[0]} via {args[1]}."
     if tipo == "excluir_coluna":
         cols = args[0]
         return df.drop(columns=cols), f"❌ Coluna(s) {cols} excluída(s)."
     if tipo == "inserir_coluna":
-        return processing.inserir_coluna(df, args[0], args[1], args[2]), f"➕ Coluna '{args[0]}' inserida."
+        return data_processing.inserir_coluna(df, args[0], args[1], args[2]), f"➕ Coluna '{args[0]}' inserida."
     if tipo == "strip_all":
-        return processing.limpar_espacos_fantasmas(df), "🧼 Espaços em branco removidos."
+        return data_processing.limpar_espacos_fantasmas(df), "🧼 Espaços em branco removidos."
     return df, "Ação desconhecida"
 
-def aplicar_acao_texto(action: tuple, df: pd.DataFrame) -> Tuple[pd.DataFrame, str]:
+def aplicar_acao_texto(action: tuple, df: pd.DataFrame) -> tuple[pd.DataFrame, str]:
     tipo, *args = action
     if tipo == "caixa_texto":
-        return processing.ajustar_caixa_texto(df, args[0], args[1]), f"🔤 Caixa ajustada para {args[1]}."
+        return data_processing.ajustar_caixa_texto(df, args[0], args[1]), f"🔤 Caixa ajustada para {args[1]}."
     if tipo == "gerar_ids":
-        return processing.gerar_ids_sequenciais(df, args[0], args[1]), f"🆔 IDs gerados em '{args[0]}'."
+        return data_processing.gerar_ids_sequenciais(df, args[0], args[1]), f"🆔 IDs gerados em '{args[0]}'."
     if tipo == "mascara_doc":
-        return processing.aplicar_mascara_documento(df, args[0], args[1]), f"🔤 Máscara de {args[1]} aplicada."
+        return data_processing.aplicar_mascara_documento(df, args[0], args[1]), f"🔤 Máscara de {args[1]} aplicada."
     if tipo == "fake_docs":
-        return processing.preencher_documentos_fakes(df, args[0], args[1]), f"🎲 Documentos fakes gerados."
+        return data_processing.preencher_documentos_fakes(df, args[0], args[1]), f"🎲 Documentos fakes gerados."
     return df, "Ação desconhecida"
 
-def aplicar_acao_rh(action: tuple, df: pd.DataFrame) -> Tuple[pd.DataFrame, Any, str]:
+def aplicar_acao_rh(action: tuple, df: pd.DataFrame) -> tuple[pd.DataFrame, Any, str]:
     tool = action[0]
     p = action[1:]
     if tool == "tempo_casa":
-        return processing.calcular_tempo_casa_v2(df, p[0], p[1] if len(p)>1 else False), None, f"🛠️ Tempo de casa calculado."
+        return rh_tools.calcular_tempo_casa_v2(df, p[0], p[1] if len(p)>1 else False), None, f"🛠️ Tempo de casa calculado."
     if tool == "analise":
-        return df, processing.gerar_relatorio_rh(df, p[0], p[1]), f"📊 Relatório de {p[0]} gerado."
+        return df, rh_tools.gerar_relatorio_rh(df, p[0], p[1]), f"📊 Relatório de {p[0]} gerado."
     if tool == "banding":
-        return processing.aplicar_banding_salarial(df, p[0], p[1]), None, f"🛠️ Banding salarial aplicado."
+        return rh_tools.aplicar_banding_salarial(df, p[0], p[1]), None, f"🛠️ Banding salarial aplicado."
     if tool == "compliance":
-        return df, processing.validar_compliance_rh_v2(df, p[0], p[1], p[2]), f"🛠️ Validação de compliance executada."
+        return df, rh_tools.validar_compliance_rh_v2(df, p[0], p[1], p[2]), f"🛠️ Validação de compliance executada."
     if tool == "demissao":
-        return processing.calcular_demissao_rh(df, *p), None, f"🛠️ Cálculo de demissão aplicado."
+        return rh_tools.calcular_demissao_rh(df, *p), None, f"🛠️ Cálculo de demissão aplicado."
     return df, None, "Ação desconhecida"
 
 
-# ===================== Helpers da UI =====================
+# ===================== Helpers =====================
 
 @st.cache_data(ttl=600)
 def _load_cached(f, **kwargs) -> pd.DataFrame:
-    return processing.carregar_dados(f, **kwargs)
+    return data_processing.carregar_dados(f, **kwargs)
 
 def _processar_action_limpeza(state_obj: AppState) -> None:
     action = pop_action("action_limpeza")
     if action:
-        state_obj.df_tratado, msg = aplicar_acao_limpeza(action, state_obj.df_tratado)
-        registrar_log(state_obj, msg)
-        st.success("Ação aplicada!")
-        st.rerun()
+        try:
+            state_obj.df_tratado, msg = aplicar_acao_limpeza(action, state_obj.df_tratado)
+            registrar_log(state_obj, msg)
+            st.success("Ação aplicada!")
+            st.rerun()
+        except Exception:
+            st.error("❌ Erro ao processar limpeza. Verifique os dados selecionados.")
 
 def _processar_action_texto(state_obj: AppState) -> None:
     action = pop_action("action_texto")
     if action:
-        state_obj.df_tratado, msg = aplicar_acao_texto(action, state_obj.df_tratado)
-        registrar_log(state_obj, msg)
-        st.rerun()
+        try:
+            state_obj.df_tratado, msg = aplicar_acao_texto(action, state_obj.df_tratado)
+            registrar_log(state_obj, msg)
+            st.rerun()
+        except Exception:
+            st.error("❌ Erro ao processar texto. Verifique as colunas selecionadas.")
 
 def _processar_action_rh(state_obj: AppState) -> None:
     action = pop_action("action_rh")
     if action:
-        df_n, extra, msg = aplicar_acao_rh(action, state_obj.df_tratado)
-        state_obj.df_tratado = df_n
-        registrar_log(state_obj, msg)
-        if action[0] == "analise" or action[0] == "compliance": st.dataframe(extra, hide_index=True)
-        else: st.success("Ação concluída!")
-        st.rerun()
+        try:
+            df_n, extra, msg = aplicar_acao_rh(action, state_obj.df_tratado)
+            state_obj.df_tratado = df_n
+            registrar_log(state_obj, msg)
+            if action[0] in ("analise", "compliance"): st.dataframe(extra, hide_index=True)
+            else: st.success("Ação concluída!")
+            st.rerun()
+        except Exception:
+            st.error("❌ Erro ao processar análise RH. Verifique os tipos de dados.")
 
 
 # ===================== Main =====================
 
 def main():
     st.set_page_config(page_title="DATAONE", page_icon="🎲", layout="wide")
+    st.set_option("client.showErrorDetails", False)
     
-    # Estados de UI
     if "show_developer" not in st.session_state:
         st.session_state.show_developer = False
     
@@ -150,11 +158,11 @@ def main():
                 config_atual['decimal'] = st.selectbox("Decimal:", [",", "."])
             else:
                 st.subheader("⚙️ Configurações Excel")
-                abas = processing.listar_abas(file_upload)
+                abas = data_processing.listar_abas(file_upload)
                 config_atual['sheet_name'] = st.selectbox("Selecionar Aba:", options=abas) if abas else 0
             
             if st.button("🔄 Aplicar Configurações"):
-                state.ultimo_id_arquivo = None # Força recarregamento
+                state.ultimo_id_arquivo = None
                 st.rerun()
 
         st.divider()
@@ -163,25 +171,23 @@ def main():
             for log in reversed(state.audit_log): st.caption(log)
         else: st.caption("Nenhuma ação realizada.")
 
-    ui_components.render_header()
+    components.render_header()
 
     if not file_upload:
         st.info("👋 Faça upload de um arquivo para começar.")
         return
 
-    # Gerar ID único considerando nome, tamanho e configurações de importação
     id_f = f"{file_upload.name}_{file_upload.size}_{str(config_atual)}"
     
     if state.ultimo_id_arquivo != id_f:
         try:
-            df_novo = processing.carregar_dados(file_upload, **config_atual)
+            df_novo = data_processing.carregar_dados(file_upload, **config_atual)
             init_state(df_novo, id_f, config_atual)
             st.rerun()
         except Exception as e:
             st.error(f"❌ Erro ao carregar arquivo: {e}")
             return
 
-    # Header de informações rápidas
     tipo_icon = "📄 CSV" if file_upload.name.endswith('.csv') else "📗 Excel"
     st.info(f"📊 **{tipo_icon} Ativo:** {len(state.df_tratado)} registros | {len(state.df_tratado.columns)} colunas")
 
@@ -190,27 +196,41 @@ def main():
         st.rerun()
 
     tabs = st.tabs(["🔍 Diagnóstico", "🧼 Limpeza", "🔤 Texto", "⚙️ Formatação", "📊 Analysis", "📑 Fórmulas Excel", "💾 Exportar"])
-    with tabs[0]: ui_components.render_diagnostico_tab(state.df_tratado)
+    
+    with tabs[0]:
+        try: components.render_diagnostico_tab(state.df_tratado)
+        except Exception: st.error("❌ Erro ao gerar diagnóstico.")
     with tabs[1]:
-        ui_components.render_limpeza_tab(state.df_tratado, id_f)
-        _processar_action_limpeza(state)
+        try:
+            components.render_limpeza_tab(state.df_tratado, id_f)
+            _processar_action_limpeza(state)
+        except Exception: st.error("❌ Erro na limpeza de dados.")
     with tabs[2]:
-        ui_components.render_texto_tab(state.df_tratado)
-        _processar_action_texto(state)
-    with tabs[3]: ui_components.render_formatacao_tab(state.df_tratado)
+        try:
+            components.render_texto_tab(state.df_tratado)
+            _processar_action_texto(state)
+        except Exception: st.error("❌ Erro na formatação de texto.")
+    with tabs[3]:
+        try: components.render_formatacao_tab(state.df_tratado)
+        except Exception: st.error("❌ Erro na formatação visual.")
     with tabs[4]:
-        ui_components.render_analysis_tab(state.df_tratado)
-        _processar_action_rh(state)
+        try:
+            components.render_analysis_tab(state.df_tratado)
+            _processar_action_rh(state)
+        except Exception: st.error("❌ Erro ao gerar análises.")
     with tabs[5]:
-        ui_components.render_formulas_tab()
+        try: components.render_formulas_tab()
+        except Exception: st.error("❌ Erro ao carregar fórmulas.")
     with tabs[6]:
-        col_m, dict_m = st.session_state.get("ctrl_moeda", []), st.session_state.get("config_moedas", {})
-        col_d, dict_d = st.session_state.get("ctrl_data", []), st.session_state.get("config_datas", {})
-        df_f, fmt = processing.processar_formatacoes_finais(state.df_tratado, col_m, dict_m, col_d, dict_d)
-        ui_components.render_export_tab(df_f, ui_components.get_column_config(df_f.columns.tolist(), fmt))
-        st.download_button("📥 Baixar Excel", processing.exportar_para_excel(df_f, col_m, dict_m, col_d, dict_d), "dataone_export.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+        try:
+            col_m, dict_m = st.session_state.get("ctrl_moeda", []), st.session_state.get("config_moedas", {})
+            col_d, dict_d = st.session_state.get("ctrl_data", []), st.session_state.get("config_datas", {})
+            df_f, fmt = data_processing.processar_formatacoes_finais(state.df_tratado, col_m, dict_m, col_d, dict_d)
+            components.render_export_tab(df_f, components.get_column_config(df_f.columns.tolist(), fmt))
+            st.download_button("📥 Baixar Excel", data_processing.exportar_para_excel(df_f, col_m, dict_m, col_d, dict_d), "dataone_export.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+        except Exception: st.error("❌ Erro ao exportar.")
 
-    ui_components.render_footer()
+    components.render_footer()
 
 if __name__ == "__main__":
     main()
