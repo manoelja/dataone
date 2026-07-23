@@ -425,7 +425,7 @@ def render_footer():
                 st.html(_icon_html("https://www.linkedin.com/in/manoel-ara%C3%BAjo-79b62239b", LINKEDIN_SVG, "LinkedIn", "LinkedIn"))
         with ic3:
             if PORTFOLIO_SVG:
-                st.html(_icon_html("https://portfolio-manoelja.vercel.app", PORTFOLIO_SVG, "Portfólio", "Portfólio"))
+                st.html(_icon_html("https://manoelja.vercel.app", PORTFOLIO_SVG, "Portfólio", "Portfólio"))
         with ic4:
             if st.button("", key="btn_sobre_mim", icon=":material/person:", help="Sobre o Desenvolvedor", use_container_width=True):
                 st.session_state.show_developer = not st.session_state.show_developer
