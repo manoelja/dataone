@@ -419,7 +419,7 @@ def render_footer():
         c_space, ic1, ic2, ic3, ic4 = st.columns([2, 1, 1, 1, 1])
         with ic1:
             if GITHUB_SVG:
-                st.html(_icon_html("https://github.com/manoelja/DataOne", GITHUB_SVG, "GitHub", "GitHub"))
+                st.html(_icon_html("https://github.com/manoelja/dataone", GITHUB_SVG, "GitHub", "GitHub"))
         with ic2:
             if LINKEDIN_SVG:
                 st.html(_icon_html("https://www.linkedin.com/in/manoel-ara%C3%BAjo-79b62239b", LINKEDIN_SVG, "LinkedIn", "LinkedIn"))
@@ -437,6 +437,5 @@ def render_footer():
         with st.chat_message("user", avatar=":material/person:"):
             st.markdown("""
             #### **Sobre o Desenvolvedor**
-            Manoel é um Data Scientist apaixonado por transformar dados brutos em inteligência e por democratizar o
-            acesso ao conhecimento técnico.
+            Sou Manoel, apaixonado por IA e Data Science.
             """)
