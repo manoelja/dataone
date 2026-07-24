@@ -422,7 +422,7 @@ def render_footer():
                 st.html(_icon_html("https://github.com/manoelja/dataone", GITHUB_SVG, "GitHub", "GitHub"))
         with ic2:
             if LINKEDIN_SVG:
-                st.html(_icon_html("https://www.linkedin.com/in/manoel-ara%C3%BAjo-79b62239b", LINKEDIN_SVG, "LinkedIn", "LinkedIn"))
+                st.html(_icon_html("https://www.linkedin.com/in/manoelja", LINKEDIN_SVG, "LinkedIn", "LinkedIn"))
         with ic3:
             if PORTFOLIO_SVG:
                 st.html(_icon_html("https://manoelja.vercel.app", PORTFOLIO_SVG, "Portfólio", "Portfólio"))
